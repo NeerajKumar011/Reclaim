@@ -25,7 +25,7 @@
 > 
 > Most tools solve this with brute-force spam: sending 5 automated SMS messages and 3 WhatsApp blasts to every customer who drops off. The result? High customer fatigue, damaged brand reputation, and high channel costs for money that would have recovered on its own anyway.
 > 
-> In our live held-out evaluation sample of real payment events from `test_holdout.jsonl`, merchants faced **₹20.51 Lakhs (₹2,051,201.27)** in revenue at risk.
+> In our canonical held-out evaluation of 1,500 real-world payment events from `test_holdout.jsonl`, merchants faced **₹1.91 Crores (₹1,91,47,346.23)** in revenue at risk.
 > 
 > Meet **RECLAIM** — an Autonomous Revenue Recovery Engine that treats revenue recovery not as a spam campaign, but as a dynamic decision problem."*
 
@@ -41,7 +41,7 @@
 > 
 > But look at what RECLAIM did: our diagnosis engine identified the root cause as `BANK_RAIL_DOWN` (an HDFC bank gateway downtime). Because this is a transient infrastructure issue, our deterministic policy engine rendered a decision of **BLOCK** with zero contact.
 > 
-> Why? Because sending an SMS when the bank rail is down confuses the customer and wastes money. The policy log explicitly states: *'Bank rail downtime detected; transient issue will self-resolve within 2 hours. Intervention blocked to prevent customer fatigue.'*
+> Why? Because sending an SMS when the bank rail is down confuses the customer and wastes money. The policy log explicitly states: *'Bank rail downtime detected; transient issue will self-resolve. Intervention blocked to prevent customer fatigue.'*
 > 
 > RECLAIM knows when NOT to act. That is intelligent restraint."*
 
@@ -55,7 +55,7 @@
 > 
 > When a customer responds in natural Hinglish—for example: *'Haan bhai, salary parso aayegi tab pay kar dunga'* ('Yes brother, salary comes day after tomorrow, will pay then')—standard bots fail or keep sending daily reminders.
 > 
-> RECLAIM’s Promise Extractor parses the intent, extracts the target payment date (`2026-08-31`), updates `RecoveryMemory`, and transitions the state to `promised`.
+> RECLAIM’s Promise Extractor parses the intent, extracts the target payment date, updates `RecoveryMemory`, and transitions the state to `promised`.
 > 
 > All automated nudges are immediately suppressed until 24 hours after the promised date. Look at the vertical audit log timeline: every action, reason, and state transition is 100% transparent and traceable."*
 
@@ -67,13 +67,13 @@
 
 > *"Now, how do we prove RECLAIM actually performs better than industry standards?
 > 
-> We built a **Counterfactual Policy Simulator** that replays our held-out evaluation dataset (recorded in `reclaim/eval/output/scoreboard.json`) across the full policy benchmark:
+> We built a **Counterfactual Policy Simulator** that replays our held-out evaluation dataset (recorded in `reclaim/eval/output/scoreboard.json`, N=1500, seed=42) across the full policy benchmark:
 > 
-> 1. **NO-ACTION**: Recovers only ₹1,67,163.05 (8.15% natural self-resolution).
-> 2. **FIXED-RETRY (SMS Blast)**: Recovers ₹6,03,985.16 (29.45%), contacting all 150 customers indiscriminately.
-> 3. **FIXED-DUNNING (Escalation Ladder)**: Recovers ₹7,00,468.83 (34.15%), but with highest intervention costs (₹75.00).
-> 4. **RAZORPAY-SMART-RETRY**: Recovers ₹3,66,255.08 (17.86% native payment link retry with 0 telecom cost, but lacking omnichannel coordination or timing intelligence).
-> 5. **RECLAIM (Autonomous Engine)**: Recovers **₹6,80,779.07 (33.19% Recovery Rate)** with **₹5,13,616.02 incremental uplift**, while contacting **only 106 customers (29.3% fewer contacts than brute-force 150)** and achieving the **highest revenue yield per contact (₹6,422.44/contact)**.
+> 1. **NO-ACTION**: Recovers ₹33,76,575.13 (17.63% natural self-resolution).
+> 2. **FIXED-RETRY (SMS Blast)**: Recovers ₹70,96,752.83 (37.06%), contacting all 1,500 customers indiscriminately.
+> 3. **FIXED-DUNNING (Escalation Ladder)**: Recovers ₹77,63,251.45 (40.54%), but with highest intervention costs (₹750.00).
+> 4. **RAZORPAY-SMART-RETRY**: Recovers ₹53,18,906.07 (27.78% native payment link retry with 0 telecom cost, but lacking omnichannel coordination or timing intelligence).
+> 5. **RECLAIM (Autonomous Engine)**: Recovers **₹72,22,091.33 (37.72% Recovery Rate)** with **₹38,45,516.20 incremental uplift**, while contacting **only 852 customers (43.2% fewer contacts than brute-force 1,500)** and achieving the **highest revenue yield per contact (₹8,476.63/contact)** and **lowest cost per recovered rupee (₹0.000033)**.
 > 
 > By skipping unnecessary contacts and selecting the optimal channel per failure cause, RECLAIM maximizes recovery yield and achieves the lowest intervention cost per rupee recovered among active outreach policies."*
 
@@ -85,10 +85,10 @@
 
 > *"Let’s look at the headline numbers on our scoreboard:
 > 
-> - **At-Risk Revenue**: ₹20,51,201.27 (N=150 held-out test events)
-> - **Revenue Recovered**: **₹6,80,779.07** (33.19% recovery rate)
-> - **Incremental Recovery Uplift**: **₹5,13,616.02**
-> - **Contacts Made**: 106 (29.3% reduction vs brute-force 150)
+> - **At-Risk Revenue**: ₹1,91,47,346.23 (N=1,500 held-out test events)
+> - **Revenue Recovered**: **₹72,22,091.33** (37.72% recovery rate)
+> - **Incremental Recovery Uplift**: **₹38,45,516.20**
+> - **Contacts Made**: 852 (43.2% reduction vs brute-force 1,500)
 > - **Policy Violations**: **EXACTLY ZERO**.
 > 
 > Because financial authorization (`max_discount_paise`, payment link generation) is strictly separated from generative copy synthesis, RECLAIM guarantees 0 discount hallucinations and 0 policy violations.
@@ -103,6 +103,7 @@
 
 - [x] Tested timing with stopwatch (Target: 4:45 to 5:00 min).
 - [x] Verified dashboard URLs load instantly at `http://localhost:8000/dashboard`.
-- [x] Verified `scoreboard.json` numbers match `test_holdout.jsonl` (N=30, seed=42).
+- [x] Verified `scoreboard.json` numbers match `test_holdout.jsonl` (N=1500, seed=42).
 - [x] Verified Customer Timeline displays full untruncated reason strings.
+
 

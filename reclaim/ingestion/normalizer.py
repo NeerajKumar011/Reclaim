@@ -112,6 +112,32 @@ def normalize_order_paid(
     )
 
 
+def normalize_payment_link_paid(
+    raw: dict[str, Any], customer_id: str
+) -> RevenueEvent:
+    """Normalize a payment_link.paid event."""
+    plink = raw.get("payload", {}).get("payment_link", {}).get("entity", {})
+    payment = _extract_payment_entity(raw)
+    amount = plink.get("amount_paid") or plink.get("amount") or payment.get("amount", 0)
+    event_id = raw.get("event_id", raw.get("account_id", "") + "_" + plink.get("id", payment.get("id", "")))
+
+    return RevenueEvent(
+        event_id=event_id,
+        event_category=EventCategory.payment_success,
+        customer_id=customer_id,
+        amount=Decimal(str(amount)),
+        currency=plink.get("currency", payment.get("currency", "INR")),
+        failure_reason_raw=None,
+        occurred_at=_unix_to_iso(raw.get("created_at") or plink.get("updated_at")),
+        source_metadata={
+            "payment_link_id": plink.get("id"),
+            "payment_id": payment.get("id"),
+            "order_id": plink.get("order_id") or payment.get("order_id"),
+            "status": plink.get("status"),
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
 # Synthetic / non-native event normalizers
 # ---------------------------------------------------------------------------
@@ -162,6 +188,7 @@ NORMALIZER_DISPATCH = {
     "payment_failed": normalize_payment_failed,
     "payment_captured": normalize_payment_captured,
     "order_paid": normalize_order_paid,
+    "payment_link_paid": normalize_payment_link_paid,
 }
 
 SYNTHETIC_EVENTS = {"checkout_abandoned", "invoice_overdue"}

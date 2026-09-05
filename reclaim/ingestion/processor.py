@@ -35,6 +35,7 @@ from reclaim.ingestion.normalizer import (
     normalize_synthetic,
     razorpay_event_to_internal,
 )
+from reclaim.common.money import format_audit_case_reason
 from reclaim.ingestion.schemas import RevenueEvent
 
 logger = logging.getLogger(__name__)
@@ -168,7 +169,11 @@ async def process_webhook_event(
                     normalized=normalized,
                 )
 
-        elif event_type in (EventType.payment_captured, EventType.order_paid):
+        elif event_type in (
+            EventType.payment_captured,
+            EventType.order_paid,
+            EventType.payment_link_paid,
+        ):
             # Payment succeeded → update RecoveryMemory with outcome
             if recovery_state.state == RecoveryStateEnum.recovered:
                 await _invoke_outcome_observer(db=db, recovery_state=recovery_state)
@@ -516,7 +521,11 @@ async def _manage_recovery_state(
 
     # --- Out-of-order handling ---
 
-    if event_type == EventType.payment_captured or event_type == EventType.order_paid:
+    if event_type in (
+        EventType.payment_captured,
+        EventType.order_paid,
+        EventType.payment_link_paid,
+    ):
         # SUCCESS event arrived
         if existing and existing.state in (
             RecoveryStateEnum.failed,
@@ -535,7 +544,7 @@ async def _manage_recovery_state(
                 recovery_state=existing,
                 actor="system",
                 action=f"state_transition: {old_state} → recovered",
-                reason=f"Payment captured/order paid (event {event.razorpay_event_id}), "
+                reason=f"Payment captured/order paid/link paid (event {event.razorpay_event_id}), "
                        f"recovering from {old_state} state",
             )
             return existing  # Return so outcome observer can be triggered
@@ -604,7 +613,8 @@ async def _manage_recovery_state(
             recovery_state=new_state,
             actor="system",
             action="recovery_state_created",
-            reason=f"Payment failed — created recovery case for amount {amount} paise",
+            reason=format_audit_case_reason("Payment failed", amount),
+            metadata={"amount_paise": int(amount)},
         )
         return new_state  # Fresh state → pipeline should run
     elif event_type in (
@@ -628,7 +638,8 @@ async def _manage_recovery_state(
             recovery_state=new_state,
             actor="system",
             action="recovery_state_created",
-            reason=f"{event_type.value} — created recovery case for amount {amount} paise",
+            reason=format_audit_case_reason(event_type.value, amount),
+            metadata={"amount_paise": int(amount)},
         )
         return new_state  # Fresh state → pipeline should run
 

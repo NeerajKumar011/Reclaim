@@ -178,11 +178,12 @@ def load_holdout_records(
 
 def build_dummy_customer(record: Dict[str, Any]) -> Customer:
     """Build a dummy Customer object from record fields without ground_truth."""
+    meta = record.get("source_metadata", {})
     customer = Customer(
         email=f"{record.get('customer_id', 'cust')}@example.com",
         name="Test Customer",
         preferred_language="en",
-        opted_out=False,
+        opted_out=bool(meta.get("opted_out", False)),
     )
     return customer
 
@@ -439,6 +440,8 @@ def replay_heldout_dataset(
     def _diagnose_record(rec: Dict[str, Any]):
         event_id = str(rec.get("event_id", ""))
         input_record = {k: v for k, v in rec.items() if k != "ground_truth"}
+        if is_heuristic_run:
+            return event_id, heuristic_classify(input_record)
         try:
             rev_event = RE(
                 event_id=input_record.get("event_id", ""),

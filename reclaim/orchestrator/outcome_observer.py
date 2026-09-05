@@ -127,14 +127,16 @@ async def handle_outcome_transition(
         if channel_found:
             memory.preferred_channel = channel_found
 
-    # 5. Update last_updated timestamp
+    # 5. Record last outcome and update last_updated timestamp
+    memory.last_outcome = recovery_state.state.value
     memory.last_updated = now
     await db.flush()
 
     logger.info(
         f"Updated RecoveryMemory for customer {customer_id}: "
         f"response_rate={memory.historical_response_rate:.2f}, "
-        f"preferred_channel={memory.preferred_channel}"
+        f"preferred_channel={memory.preferred_channel}, "
+        f"last_outcome={memory.last_outcome}"
     )
 
     return memory

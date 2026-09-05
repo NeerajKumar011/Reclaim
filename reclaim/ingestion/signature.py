@@ -11,6 +11,15 @@ import hashlib
 import hmac
 
 
+def compute_signature(raw_body: bytes, secret: str) -> str:
+    """Compute HMAC-SHA256 signature for Razorpay webhook payload."""
+    return hmac.new(
+        key=secret.encode("utf-8"),
+        msg=raw_body,
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+
 def verify_razorpay_signature(
     raw_body: bytes,
     signature: str,
@@ -26,10 +35,5 @@ def verify_razorpay_signature(
     Returns:
         True if the signature is valid, False otherwise.
     """
-    expected = hmac.new(
-        key=secret.encode("utf-8"),
-        msg=raw_body,
-        digestmod=hashlib.sha256,
-    ).hexdigest()
-
+    expected = compute_signature(raw_body, secret)
     return hmac.compare_digest(expected, signature)

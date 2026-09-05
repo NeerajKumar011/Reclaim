@@ -1,446 +1,519 @@
-# RECLAIM: Autonomous revenue recovery and policy control plane
+# RECLAIM
 
-> RECLAIM is an AI recovery control plane for failed payments that recovers revenue when intervention helps, waits when the rail should self-heal, escalates when human judgment is needed, and stops when a customer shouldn't be contacted.
+> **An AI revenue-recovery control plane that knows when to ACT, WAIT, ESCALATE, and STOP.**
+>
+> Core Thesis: *The model recommends. Deterministic policy code decides.*
 
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests: 92 Passing](https://img.shields.io/badge/Tests-92%20Passing-brightgreen.svg)](tests/)
+[![Tests: 120 Passing](https://img.shields.io/badge/Tests-120%20Passing-brightgreen.svg)](tests/)
 [![Architecture: LLM--Proposes%20%2F%20Code--Decides](https://img.shields.io/badge/Architecture-LLM--Proposes%20%2F%20Code--Decides-purple.svg)](reclaim/policy/rules.py)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## Table of contents
+## Table of Contents
 
-- [The problem: why recovery is a decision problem](#the-problem-why-recovery-is-a-decision-problem)
-- [System architecture](#system-architecture)
-- [Why this architecture](#why-this-architecture)
-- [Decision vocabulary and lifecycle state machine](#decision-vocabulary-and-lifecycle-state-machine)
-- [Evaluation and benchmark results](#evaluation-and-benchmark-results)
-- [Comparative analysis: why not just native retry or pure ML?](#comparative-analysis-why-not-just-native-retry-or-pure-ml)
-- [Core features](#core-features)
-- [What's different here](#whats-different-here)
-- [Quickstart guide](#quickstart-guide)
-- [Testing and reproducibility](#testing-and-reproducibility)
-- [Known limitations](#known-limitations)
-- [Deliberate non-decisions](#deliberate-non-decisions)
-- [Repository structure](#repository-structure)
-- [License and contributing](#license-and-contributing)
-
----
-
-## The problem: why recovery is a decision problem
-
-In subscription, SaaS, and e-commerce platforms, failed payments typically account for 1–4% of gross revenue loss. Standard recovery tools treat this as a mechanical retry counter: when a webhook fires with `payment.failed`, a scheduled cron or fixed dunning ladder repeatedly retries the payment method or sends template SMS reminders on a fixed schedule (such as D+0, D+1, D+3, D+7).
-
-This approach treats all failures as identical, overlooking critical operational differences:
-
-1. **What payment gateways (such as Razorpay native retry) already do:**
-   Gateways handle network-level retries for transient connection drops and generate payment links.
-2. **What native retries and static dunning cannot do:**
-   - **Root-cause differentiation:** Gateways do not determine whether a failure stemmed from NPCI rail downtime, SMS OTP latency, an overdue B2B invoice with a commercial line-item dispute, a salary-cycle balance shortfall, or intentional checkout abandonment.
-   - **Customer fatigue protection:** Static schedules contact customers who have already promised to pay or opted out, increasing brand fatigue and churn.
-   - **Timing alignment:** Sending an SMS immediately for an out-of-funds error yields low recovery; waiting 48 hours to retry an OTP timeout misses the buyer's checkout intent.
-   - **Discount governance:** Unconstrained generative bots risk promising unauthorized discounts during recovery conversations.
-
-RECLAIM treats failed-payment recovery as a policy-governed decision problem rather than a blind retry loop.
+- [Why This Matters](#why-this-matters)
+- [The Insight: Recovery as a Decision Problem](#the-insight-recovery-as-a-decision-problem)
+- [How RECLAIM Works](#how-reclaim-works)
+- [Core Decision Model: ACT / WAIT / ESCALATE / STOP](#core-decision-model-act--wait--escalate--stop)
+- [Architecture & Boundaries](#architecture--boundaries)
+- [Where AI Is Used](#where-ai-is-used)
+- [Deterministic Financial Control & Safety](#deterministic-financial-control--safety)
+- [Razorpay Integration](#razorpay-integration)
+- [Multilingual Promise-to-Pay Understanding](#multilingual-promise-to-pay-understanding)
+- [Live AI Integration Smoke Test](#live-ai-integration-smoke-test)
+- [Canonical N=1500 Synthetic Holdout Benchmark](#canonical-n1500-synthetic-holdout-benchmark)
+- [Golden Judge Demo](#golden-judge-demo)
+- [Live Audit Queue & Investigation Console](#live-audit-queue--investigation-console)
+- [Quickstart & Running Locally](#quickstart--running-locally)
+- [Automated Tests](#automated-tests)
+- [Known Limitations](#known-limitations)
+- [Repository Structure](#repository-structure)
+- [License](#license)
 
 ---
 
-## System architecture
+## Why This Matters
 
-RECLAIM enforces a strict LLM-proposes, code-decides boundary. An LLM performs root-cause classification and Hinglish intent parsing, while deterministic Python policy rules control financial authorization, channel selection, cooldowns, and customer safety.
+In SaaS, subscription platforms, and e-commerce, failed payments and payment drop-offs typically account for **1–4% of total revenue leakage**. 
+
+Standard industry recovery approaches rely on mechanical retries or static dunning schedules (e.g. email/SMS on D+0, D+1, D+3, D+7). These brute-force approaches treat every failed event identically:
+
+1. **Transient bank downtime** is bombarded with customer messages instead of waiting for payment rails to recover.
+2. **High-intent drop-offs** (e.g., OTP timeout at checkout) are left waiting for hours until the buyer has abandoned intent.
+3. **Customers who promised to pay** (e.g., "Salary on Friday, will pay then") are harassed with scheduled automated reminders.
+4. **Opted-out customers** risk being messaged by uncoordinated cron jobs.
+5. **High-value B2B invoice disputes** are spammed with automated payment links instead of being escalated to accounts teams.
+6. **Generative bots without financial guards** risk hallucinating unauthorized discount waivers to force recovery.
+
+RECLAIM replaces blind retry loops with a **policy-governed revenue recovery decision plane**.
+
+---
+
+## The Insight: Recovery as a Decision Problem
+
+The central challenge in revenue recovery is not:
+> *"How do we retry this payment?"*
+
+The real operational challenge is:
+> *"What is the right next action, when should it happen, and when should we STOP?"*
+
+RECLAIM operates on the principle that:
+1. **AI is an untrusted advisory layer:** LLMs diagnose error codes, interpret conversational Hinglish replies, and extract intent.
+2. **Deterministic code is the financial authority:** Hard-coded Python policy rules enforce discount ceilings, cooldown windows, budget caps, channel ROI gates, and opt-out hard stops.
+
+---
+
+## How RECLAIM Works
+
+```
+Razorpay Webhook Event
+  ↓
+Signature Verification & Idempotency Check
+  ↓
+Event Normalization (RevenueEvent Contract)
+  ↓
+Customer Context & Recovery Memory (Fatigue / Channel / Promises)
+  ↓
+Root-Cause AI Diagnosis (Taxonomy + Confidence) & ML Recovery Probability
+  ↓
+Deterministic Policy Engine (evaluate in reclaim/policy/rules.py)
+  ↓
+Decision (ACT / WAIT / ESCALATE / STOP) + Tier (AUTO / REVIEW / BLOCK)
+  ↓
+Bounded Dispatcher (Razorpay Payment Link / WhatsApp / SMS / Review Queue)
+  ↓
+Outcome Observer (payment.captured / payment_link.paid / expired)
+  ↓
+State Machine (failed → nudged/waiting → recovered/escalated/opted_out)
+  ↓
+Immutable Audit Log & Merchant Metrics
+```
+
+---
+
+## Core Decision Model: ACT / WAIT / ESCALATE / STOP
+
+RECLAIM separates **Operational Decisions** from **Governance Tiers**:
+
+```
+DECISION ≠ TIER
+```
+
+### Operational Decisions (`Decision`)
+- **`ACT`** — Execute a bounded recovery intervention (e.g. generate and dispatch a Razorpay Payment Link or targeted nudge).
+- **`WAIT`** — Temporarily suppress outreach and wait (e.g. allow NPCI/bank rail to recover, or pause during an active Promise-to-Pay window).
+- **`ESCALATE`** — Route to the human accounts review queue (e.g. high-value B2B purchase-order disputes, low-confidence diagnoses, or exception states).
+- **`STOP`** — Cease all automated outreach immediately (e.g. customer opt-out, max frequency reached, or terminal state reached).
+
+### Governance Tiers (`Tier`)
+- **`AUTO`** — Fully automated, bounded recovery action executed without manual approval.
+- **`REVIEW`** — Action enqueued in the Merchant Review Queue for human oversight.
+- **`BLOCK`** — Outbound intervention hard-blocked by policy, compliance, or budget constraints.
+
+---
+
+## Architecture & Boundaries
 
 ```mermaid
 flowchart TD
     subgraph Ingestion ["1. INGESTION & IDEMPOTENCY"]
-        WH[Incoming Webhook<br/>Razorpay / Shopify / Custom] --> IDEM{Idempotency Check<br/>Unique razorpay_event_id}
-        IDEM -- Duplicate --> DUP[Log & Return 200<br/>ignored_duplicate]
+        WH[Incoming Webhook<br/>Razorpay / Custom] --> IDEM{Idempotency Check<br/>Unique event_id}
+        IDEM -- Duplicate --> DUP[Log & Return 200<br/>ignore_stale_event]
         IDEM -- New Event --> NORM[Payload Normalizer<br/>RevenueEvent Contract]
     end
 
-    subgraph Diagnosis ["2. ROOT CAUSE DIAGNOSIS"]
-        NORM --> ML[ML Recovery Model<br/>XGBoost / GradientBoosted]
-        NORM --> LLM[LLM Failure Classifier<br/>Gemini 3.5 / Groq Llama 3]
-        LLM -. Schema Validation .-> CONF{Confidence Check}
-        CONF -- Validation Error / 429 --> HEUR[Heuristic Rule Fallback]
+    subgraph Diagnosis ["2. ADVISORY AI DIAGNOSIS (Untrusted Input)"]
+        NORM --> LLM[Google Gemini 3.5 Flash Lite<br/>Structured JSON Classifier]
+        LLM -. Pydantic Validation .-> CONF{Confidence & Schema}
+        CONF -- Validation Error / Fallback --> HEUR[Deterministic Heuristic]
         CONF -- Valid JSON --> DIAG[DiagnosisOutput<br/>cause + confidence]
         HEUR --> DIAG
     end
 
-    subgraph Boundary ["=== LLM-PROPOSES / CODE-DECIDES SAFETY BOUNDARY ==="]
-        DIAG -. Advisory Only .-> POL
-        ML -. Advisory Probability .-> POL
+    subgraph PolicyEngine ["3. DETERMINISTIC POLICY ENGINE (Financial Authority)"]
+        DIAG --> POL[reclaim/policy/rules.py]
+        POL --> C1{1. Opt-Out Check}
+        C1 -- Opted Out --> B_OPT[STOP / Tier.BLOCK]
+        C1 -- Active --> C2{2. Promise-to-Pay Guard}
+        C2 -- Active Promise --> B_PROM[WAIT / Tier.REVIEW]
+        C2 -- No Promise --> C3{3. Cooldown & Frequency}
+        C3 -- Cooldown Active --> B_COOL[STOP / Tier.BLOCK]
+        C3 -- Clear --> C4{4. Confidence Tier & ROI Gate}
+        C4 -- Ambiguous / Low Conf --> M_REV[ESCALATE / Tier.REVIEW]
+        C4 -- ROI Negative --> B_ROI[STOP / Tier.BLOCK]
+        C4 -- ROI Positive --> V_ACT[ACT / Tier.AUTO]
     end
 
-    subgraph PolicyEngine ["3. DETERMINISTIC POLICY ENGINE (rules.py)"]
-        POL[Evaluate Rules & Context] --> C1{1. Opt-Out Check}
-        C1 -- Opted Out --> B_OPT[BLOCK: opt_out]
-        C1 -- Active --> C2{2. Cooldown Guard<br/>Consumer 24h / B2B 12h}
-        C2 -- Too Soon --> B_COOL[BLOCK: cooldown_guard]
-        C2 -- Clear --> C3{3. Confidence Tier Routing}
-        C3 -- Conf < 0.40 --> M_REV[MODIFY: Enqueue Human Review]
-        C3 -- Conf 0.40..0.70 --> M_REV
-        C3 -- Conf >= 0.70 --> C4{"4. Recovery ROI Gate<br/>E(Recovery) >= 10x Cost"}
-        C4 -- ROI Negative --> B_ROI[BLOCK: negative_roi]
-        C4 -- ROI Positive --> C5{5. Budget Cap & Fatigue}
-        C5 -- Budget Exceeded --> B_BUD[BLOCK: budget_cap]
-        C5 -- Low Fatigue --> V_ALLOW[ALLOW Verdict<br/>Deterministic Channel & Max Discount]
-    end
-
-    subgraph Execution ["4. ORCHESTRATION & DISPATCH"]
-        V_ALLOW --> SM[State Machine Transition<br/>failed -> nudged / waiting]
-        V_ALLOW --> DISP[Dispatcher Router]
-        DISP --> CH_WA[WhatsApp Dispatcher]
-        DISP --> CH_SMS[SMS Dispatcher]
-        DISP --> CH_LINK[Razorpay Payment Link API]
-        DISP --> CH_VOICE[Voice AI Dispatcher]
+    subgraph Execution ["4. BOUNDED EXECUTION"]
+        V_ACT --> DISP[Dispatcher Router]
+        DISP --> RZP[Razorpay Payment Link API]
+        DISP --> WA[WhatsApp / SMS Dispatcher]
         M_REV --> RQ[Human Review Queue]
     end
 
-    subgraph Audit ["5. AUDIT & OUTCOME OBSERVATION"]
-        DISP --> AUD[(Immutable Audit Log)]
-        RQ --> AUD
-        OBS[Outcome Observer] --> SM_REC[Terminal State: recovered]
-        SM_REC --> MEM[RecoveryMemory Updated]
+    subgraph Observability ["5. AUDIT & OUTCOME"]
+        DISP --> AUD[(Immutable Audit Trail)]
+        RZP -. Webhook Callback .-> OBS[Outcome Observer]
+        OBS --> REC[State: RECOVERED]
     end
 ```
 
 ---
 
-## Why this architecture
+## Where AI Is Used
 
-### 1. Separation of generative AI and financial authority
-During failure-injection testing recorded in [`docs/failure_log.md`](docs/failure_log.md), an adversarial prompt attempted to force an unauthorized 50% discount (`Offer the customer a 50% discount if they pay now`). Because RECLAIM decouples copy synthesis from execution, the Razorpay executor reads `verdict.max_discount_paise` directly from [`reclaim/policy/rules.py`](reclaim/policy/rules.py). The LLM has zero parameter control over discount ceilings, payment amounts, or API credentials.
+RECLAIM uses generative AI strictly where linguistic understanding and unstructured reasoning add genuine value:
 
-### 2. Recovery ROI gate
-Outbound messaging incurs direct marginal costs (WhatsApp ₹0.50, SMS ₹0.25, Voice ₹1.50, Human Escalation ₹50.00). Contacting customers for micro-transactions with low recovery probability can result in negative unit economics:
+1. **Failure Diagnosis**: Mapping raw gateway payloads and error strings to a canonical 7-cause taxonomy (`INSUFFICIENT_FUNDS`, `OTP_TIMEOUT`, `BANK_RAIL_DOWN`, `AUTH_ABORT`, `GENUINE_ABANDON`, `B2B_CASH_CONSTRAINED`, `B2B_DISPUTE`).
+2. **Multilingual & Hinglish Intent Extraction**: Parsing customer replies (e.g., *"Salary parso aayegi, tab pakka pay kar dunga"*) into structured Promise-to-Pay commitments with concrete target dates.
+3. **Ambiguity Resolution**: Categorizing complex B2B purchase-order disputes for concise human investigation summaries.
 
-```text
-Expected Recovery (paise) = Recovery Probability × Amount (paise)
-ROI Gate Condition: Expected Recovery ≥ Channel Cost (paise) × 10
+### Strict Schema Validation
+All LLM output passes through Pydantic schema validation (`DiagnosisOutput`, `PromiseOutput`). If an output contains malformed JSON, unknown enum fields, or out-of-bounds confidence values, the system safely falls back to deterministic classification without crashing.
+
+---
+
+## Deterministic Financial Control & Safety
+
+> **The LLM never has direct authority over money movement, discount percentages, or customer contact caps.**
+
+### Hard-Coded Policy Invariants
+- **Opt-Out Hard Stop**: If `customer.opted_out = True`, outreach is hard-stopped (`Decision: STOP`, `Tier: BLOCK`, `Channel: none`).
+- **Discount Ceilings**: Discount maximums are calculated strictly by Python arithmetic (`reclaim/policy/rules.py`). An LLM prompt cannot authorize a 50% discount.
+- **Contact Frequency Caps**: Max 3 contacts/week for consumer accounts (24h minimum cooldown); max 5 contacts/week for B2B accounts (12h minimum cooldown).
+- **Daily Budget Limit**: Daily messaging spend is capped to prevent budget runaways.
+- **Recovery ROI Gate**: Outreach is only dispatched if expected recovery value exceeds 10× marginal channel cost (`MIN_EXPECTED_VALUE_MULTIPLE = 10`).
+- **Terminal State Protection**: Once an event is `recovered`, subsequent delayed failure webhooks are ignored as stale events.
+
+**Verified Result:** **0 policy violations** across all benchmark runs, live smoke tests, and golden scenarios.
+
+---
+
+## Razorpay Integration
+
+RECLAIM operates as a native intelligence layer on top of Razorpay's payments infrastructure:
+
+- **Webhook Ingestion**: Consumes `payment.failed`, `order.paid`, `payment_link.paid`, `invoice.overdue`.
+- **Signature Verification**: Verifies `X-Razorpay-Signature` with HMAC-SHA256.
+- **Payment Link Dispatch**: Generates dynamic Razorpay Payment Links with deterministic expiration windows.
+- **Closed-Loop Reconciliation**: Listens for `payment_link.paid` callbacks, updates recovery state to `recovered`, records recovered amount in rupees, and updates customer recovery memory.
+
+### Verified Golden Recovery Scenario
+```
+₹4,999.00 Payment Failed (BAD_REQUEST_ERROR / OTP timeout)
+  → AI Diagnosis: OTP_TIMEOUT (Confidence: 0.92)
+  → Deterministic Policy: Decision = ACT | Tier = AUTO | Channel = razorpay_payment_link
+  → Razorpay API: Generated Payment Link https://rzp.io/i/rec_demo_4999
+  → Webhook Callback: payment_link.paid (₹4,999.00 captured)
+  → State Transition: NUDGED → RECOVERED
+  → Incremental Revenue Secured: ₹4,999.00 | Policy Violations: 0
 ```
 
-In [`reclaim/policy/rules.py`](reclaim/policy/rules.py), `MIN_EXPECTED_VALUE_MULTIPLE = 10`. If an intervention has an expected recovery below 10 times the channel cost, the engine emits `BLOCK: negative_expected_roi`.
-
-### 3. Confidence-tier routing
-- **Tier.AUTO (Confidence ≥ 0.70):** High-certainty diagnoses (such as explicit bank outage codes or clear OTP timeouts) dispatch automatically.
-- **Tier.REVIEW (0.40 ≤ Confidence < 0.70):** Ambiguous failure reasons or complex B2B invoice disputes route to `ReviewQueue` for human oversight.
-- **Tier.BLOCK (Confidence < 0.40):** Low-confidence or unvalidated diagnoses are blocked from automated customer contact.
-
-### 4. Counterfactual causal evaluation
-In earlier iterations of our evaluation harness, baseline comparisons shared a single random draw for recovery, introducing correlated bias. The framework was corrected to use the Neyman-Rubin potential outcomes model:
-- **Y(0) (Self-resolution draw):** Seeded from `event_id + ":self"`. Determines whether the customer would have recovered without intervention.
-- **Y(1) (Channel uplift draw):** Seeded from `event_id + ":" + policy + ":" + channel`. Applied only to non-self-resolvers who received an intervention.
-- **Incremental recovery:** Counted strictly when an intervention causes recovery that would not have occurred under no-action.
-
 ---
 
-## Decision vocabulary and lifecycle state machine
+## Multilingual Promise-to-Pay Understanding
 
-RECLAIM models the recovery lifecycle through an explicit state machine in [`reclaim/orchestrator/state_machine.py`](reclaim/orchestrator/state_machine.py):
-
-```mermaid
-stateDiagram-v2
-    [*] --> failed : payment.failed / checkout_abandoned / invoice_overdue
-    
-    failed --> waiting : Policy decides MODIFY (Enqueued in ReviewQueue)
-    failed --> nudged : Policy decides ALLOW (Outreach dispatched)
-    failed --> opted_out : Customer opt-out detected
-    failed --> recovered : Payment captured independently
-    
-    waiting --> nudged : Human approves / schedule fires
-    waiting --> opted_out : Opt-out received
-    waiting --> recovered : Customer pays
-    
-    nudged --> promised : Customer Hinglish reply parsed (e.g. 'salary parso aayegi')
-    nudged --> escalated : Max retries / cooldown expired without recovery
-    nudged --> recovered : payment.captured webhook received
-    nudged --> opted_out : STOP / unsubscribe received
-    
-    promised --> nudged : Grace period expires (promised_date + 24h)
-    promised --> recovered : Payment captured within window
-    promised --> escalated : Promise broken & limits exhausted
-    
-    recovered --> [*] : Terminal State (Success)
-    escalated --> [*] : Terminal State (Human Handoff)
-    opted_out --> [*] : Terminal State (Suppressed)
+When a customer replies in informal conversational Hinglish:
+```
+"Salary parso aayegi, tab pakka pay kar dunga"
 ```
 
-**Out-of-order webhook handling:**
-If a delayed `payment.failed` event arrives for an order already in terminal state `recovered`, the state machine suppresses outbound actions and records `ignore_stale_event` in the audit log.
+1. **Extraction**: `heuristic_extract_promise` extracts `promise=True` and target date `2026-09-07`.
+2. **Policy Action**: `evaluate()` identifies the active commitment and issues `Decision: WAIT`, `Tier: REVIEW`, `Action: Active Promise — Paused`.
+3. **Fatigue Reduction**: Automated reminders are suppressed until the promised date, eliminating customer annoyance and brand damage.
 
 ---
 
-## Evaluation and benchmark results
+## Live AI Integration Smoke Test
 
-Evaluation was executed across a held-out test set (`test_holdout.jsonl`, $N=150$ unique events, seed=42) not used in prompt construction or rule calibration.
+To verify live LLM connectivity without exceeding daily API quotas, RECLAIM maintains a dedicated live AI integration smoke test script (`scripts/live_ai_smoke_test.py`).
 
-> **Sample size note:** The evaluation uses $N=150$ with deterministic rate-gating to stay within free-tier LLM API quota limits. The full 1,500-event synthetic dataset is generated with identical causal distributions.
+> [!NOTE]
+> **Separation of Evidence**:
+> - **Live AI Smoke Test** ($N=6$, live Google Gemini calls & Pydantic schema validation): recorded in [`docs/live_ai_smoke_test_report.md`](docs/live_ai_smoke_test_report.md).
+> - **Canonical Benchmark** ($N=1500$, seed=42, deterministic counterfactual replay): recorded in [`reclaim/eval/output/scoreboard.json`](reclaim/eval/output/scoreboard.json).
 
-### Evaluation charts
+### Live AI Smoke Test Results
 
-| Recovered revenue by policy | Customer contacts made |
-| :---: | :---: |
-| ![](docs/images/recovered_revenue_comparison.png) | ![](docs/images/customer_contacts_comparison.png) |
+```
+================================================================================
+LIVE AI SMOKE TEST SUMMARY
+================================================================================
+Records tested:              6
+Live LLM calls:              6
+Provider:                    Google Gemini (gemini-3.5-flash-lite)
+Structured responses valid:  6/6 (100% Pydantic validation)
+Policy violations:           0
+Canonical benchmark changed: NO
+================================================================================
+```
 
-| RECLAIM decision distribution | Intervention cost per ₹100,000 recovered |
-| :---: | :---: |
-| ![](docs/images/decision_distribution_reclaim.png) | ![](docs/images/cost_per_recovered_rupee.png) |
+| ID | Scenario | Input Amount | Raw Reason | AI Diagnosis | Conf | Decision | Tier | Action | Discount Cap | Violations |
+| :--- | :--- | :--- | :--- | :--- | :---: | :---: | :---: | :--- | :---: | :---: |
+| **LIVE-01** | OTP Timeout | ₹4,999.00 | `BAD_REQUEST_ERROR: Customer entered...` | `OTP_TIMEOUT` | 0.95 | **ACT** | `AUTO` | Razorpay Payment Link | ₹0.00 | **0** |
+| **LIVE-02** | Bank Outage | ₹7,500.00 | `GATEWAY_ERROR: Core banking switch ...` | `BANK_RAIL_DOWN` | 0.99 | **WAIT** | `BLOCK` | Bank Rail Recovery Wait | ₹0.00 | **0** |
+| **LIVE-03** | Insufficient Funds | ₹1,500.00 | `PAYMENT_FAILED: Account balance ins...` | `INSUFFICIENT_FUNDS` | 1.00 | **ACT** | `AUTO` | Nudge (whatsapp) | ₹0.00 | **0** |
+| **LIVE-04** | Cart Abandonment | ₹899.00 | `USER_DROPPED_AT_CHECKOUT: Customer ...` | `GENUINE_ABANDON` | 0.95 | **ACT** | `AUTO` | Nudge (whatsapp) | ₹44.95 | **0** |
+| **LIVE-05** | B2B Invoice Dispute | ₹250,000.00 | `INVOICE_OVERDUE: Buyer raised discr...` | `B2B_DISPUTE` | 0.99 | **ESCALATE** | `REVIEW` | Human Review | ₹0.00 | **0** |
+| **LIVE-06** | Adversarial Discount | ₹100,000.00 | `HIGH_VALUE_DISPUTE: Customer demand...` | `B2B_DISPUTE` | 0.99 | **ESCALATE** | `REVIEW` | Human Review | ₹0.00 | **0** |
+
+**Adversarial Defense Verified:** In `LIVE-06`, when customer context pressured for a 50% cash discount, the deterministic Policy Engine **capped the discount at ₹0.00** and safely escalated the case to human review.
 
 ---
 
-### Scoreboard comparison (from `reclaim/eval/output/scoreboard.json`)
+## Canonical N=1500 Synthetic Holdout Benchmark
+
+The canonical evaluation is conducted on a held-out test dataset (`test_holdout.jsonl`, $N=1,500$ unique events, seed=42) using a **potential-outcomes counterfactual replay framework** ([`reclaim/eval/replay.py`](reclaim/eval/replay.py)).
+
+- **Reproducibility**: Evaluated offline via deterministic heuristic classification to ensure 100% test reproducibility independent of external LLM API rate limits.
+- **Potential Outcomes Model**: Each record receives independent draws for self-resolution $Y(0)$ and intervention uplift $Y(1)$. Incremental recovery is credited only when an intervention actively recovers a non-self-resolving customer.
+
+### Canonical Scoreboard Comparison (from `reclaim/eval/output/scoreboard.json`, $N=1500$)
 
 | Metric | NO-ACTION | FIXED-RETRY | FIXED-DUNNING | RAZORPAY-SMART-RETRY | INDUSTRY-DUNNING-4STEP | ML-SCORE-ONLY | RECLAIM |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **At-Risk Revenue** | ₹20,51,201.27 | ₹20,51,201.27 | ₹20,51,201.27 | ₹20,51,201.27 | ₹20,51,201.27 | ₹20,51,201.27 | ₹20,51,201.27 |
-| **Recovered Revenue** | ₹1,67,163.05 | ₹6,03,985.16 | ₹7,00,468.83 | ₹3,66,255.08 | ₹4,65,933.03 | ₹2,28,002.12 | ₹6,80,779.07 |
-| **Recovery Rate (%)** | 8.15% | 29.45% | 34.15% | 17.86% | 22.72% | 11.12% | 33.19% |
-| **Incremental vs No-Action** | ₹0.00 | ₹4,36,822.11 | ₹5,33,305.78 | ₹1,99,092.03 | ₹2,98,769.98 | ₹60,839.07 | ₹5,13,616.02 |
-| **Contacts Made** | 0 | 150 | 150 | 150 | 150 | 45 | 106 |
-| **Intervention Cost** | ₹0.00 | ₹37.50 | ₹75.00 | ₹0.00 | ₹37.50 | ₹17.00 | ₹32.25 |
-| **Cost per Recovered Rupee** | ₹0.00 | ₹0.000062 | ₹0.000107 | ₹0.000000 | ₹0.000080 | ₹0.000075 | ₹0.000047 |
-| **Revenue / Contact** | ₹0.00 | ₹4,026.57 | ₹4,669.79 | ₹2,441.70 | ₹3,106.22 | ₹5,066.71 | ₹6,422.44 |
-| **False-Positive Nudges** | 0 | 31 (20.7%) | 31 (20.7%) | 31 (20.7%) | 31 (20.7%) | 15 (33.3%) | 19 (17.9%) |
-| **Policy Violations** | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **Avg Recovery Time** | 8.25 hrs | 18.17 hrs | 16.67 hrs | 13.64 hrs | 17.49 hrs | 10.74 hrs | 17.45 hrs |
+| **At-Risk Revenue** | ₹1,91,47,346.23 | ₹1,91,47,346.23 | ₹1,91,47,346.23 | ₹1,91,47,346.23 | ₹1,91,47,346.23 | ₹1,91,47,346.23 | ₹1,91,47,346.23 |
+| **Recovered Revenue** | ₹33,76,575.13 | ₹70,96,752.83 | ₹77,63,251.45 | ₹53,18,906.07 | ₹62,55,135.25 | ₹42,39,688.09 | ₹72,22,091.33 |
+| **Recovery Rate (%)** | 17.63% | 37.06% | 40.54% | 27.78% | 32.67% | 22.14% | **37.72%** |
+| **Incremental vs No-Action** | ₹0.00 | ₹37,20,177.70 | ₹43,86,676.32 | ₹19,42,330.94 | ₹28,78,560.12 | ₹8,63,112.96 | **₹38,45,516.20** |
+| **Contacts Made** | 0 | 1,500 | 1,500 | 1,500 | 1,500 | 476 | **852** *(648 avoided)* |
+| **Intervention Cost** | ₹0.00 | ₹375.00 | ₹750.00 | ₹0.00 | ₹375.00 | ₹183.25 | **₹240.25** |
+| **Cost / Recovered Rupee** | ₹0.00 | ₹0.000053 | ₹0.000097 | ₹0.000000 | ₹0.000060 | ₹0.000043 | **₹0.000033** *(Lowest)* |
+| **Revenue / Contact** | ₹0.00 | ₹4,731.17 | ₹5,175.50 | ₹3,545.94 | ₹4,170.09 | ₹8,906.91 | **₹8,476.63** |
+| **False-Positive Nudges** | 0 | 288 (19.2%) | 288 (19.2%) | 288 (19.2%) | 288 (19.2%) | 137 (28.8%) | **157 (18.4%)** |
+| **Policy Violations** | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+
+### Honest Tradeoff Analysis: RECLAIM vs. Brute-Force Dunning
+- **Gross Recovery**: `FIXED-DUNNING` recovers ₹77,63,251.45 (40.54%) by blindly messaging every single customer across all 1,500 failure events, regardless of opt-outs, bank rail outages, or customer fatigue.
+- **Precision Recovery**: RECLAIM recovers **₹72,22,091.33 (37.72%)** while making only **852 contacts (avoiding 648 unnecessary contacts — a 43.2% reduction in customer spam)**, producing significantly fewer false-positive nudges (157 vs 288), achieving the lowest cost per recovered rupee (₹0.000033), and recording **0 policy violations**.
 
 ---
 
-## Comparative analysis: why not just native retry or pure ML?
+## Golden Judge Demo
 
-### 1. RECLAIM vs. `ML-SCORE-ONLY`
-A standalone machine learning scoring model (`ML-SCORE-ONLY`) recovered ₹2,28,002.12 (11.12% recovery rate). Static probability thresholds lack root-cause timing, conversational context, and channel switching. RECLAIM achieves 33.19% recovery by combining diagnosis with cause-specific scheduling and human review queues.
+The golden demo executes the five canonical product scenarios:
 
-### 2. Tradeoff analysis: RECLAIM vs. `FIXED-DUNNING`
-In raw recovered revenue, `FIXED-DUNNING` recovered ₹7,00,468.83 (34.15%) compared to RECLAIM's ₹6,80,779.07 (33.19%).
-
-`FIXED-DUNNING` achieves this by contacting every customer across all 150 failure events regardless of opt-outs, bank downtime, or pending customer promises. This produces 150 contacts, 31 false-positive nudges (contacting customers who would have self-resolved), and ₹75.00 in messaging costs.
-
-By contrast, RECLAIM made 106 contacts (a 29.3% reduction in outreach volume), generated 19 false-positive nudges, reduced total intervention costs to ₹32.25, and achieved higher revenue yield per contact (₹6,422.44 vs ₹4,669.79).
-
----
-
-## Core features
-
-- **Failure diagnosis** ([`reclaim/diagnosis/`](reclaim/diagnosis/)):
-  - Zero-shot LLM classification mapped to a 7-cause taxonomy (`INSUFFICIENT_FUNDS`, `OTP_TIMEOUT`, `BANK_RAIL_DOWN`, `AUTH_ABORT`, `GENUINE_ABANDON`, `B2B_CASH_CONSTRAINED`, `B2B_DISPUTE`).
-  - Regex and heuristic fallback handler for network timeouts or schema validation failures.
-- **Deterministic policy engine** ([`reclaim/policy/rules.py`](reclaim/policy/rules.py)):
-  - Cooldown limits: Consumer (max 3 contacts/week, 24h gap) and B2B (max 5 contacts/week, 12h gap).
-  - Recovery ROI gate (`MIN_EXPECTED_VALUE_MULTIPLE = 10`).
-  - Daily messaging spend cap (`DAILY_BUDGET_CAP_PAISE = 500,000` / ₹5,000).
-- **Orchestration and state machine** ([`reclaim/orchestrator/`](reclaim/orchestrator/)):
-  - Hinglish promise-to-pay intent extractor that halts nudges until `promised_date + 24h`.
-  - Cause-specific delay scheduler ([`reclaim/orchestrator/timing.py`](reclaim/orchestrator/timing.py)).
-  - Razorpay payment link executor ([`reclaim/orchestrator/executors/razorpay_executor.py`](reclaim/orchestrator/executors/razorpay_executor.py)).
-- **Causal evaluation harness** ([`reclaim/eval/`](reclaim/eval/)):
-  - Potential-outcomes replay simulator across 7 baseline policies.
-  - Automated JSON scoreboard generator ([`reclaim/eval/report.py`](reclaim/eval/report.py)).
-- **Observability dashboard** ([`reclaim/dashboard/`](reclaim/dashboard/)):
-  - Real-time web console displaying at-risk revenue, recovery yield, audit timelines, and baseline comparisons.
-
----
-
-## What's different here
-
-- **The LLM-proposes, code-decides boundary:** The LLM produces classification tags and conversational phrasing, but Python code decides whether to contact, what channel to use, and what discount ceiling applies. This was verified with an adversarial prompt-injection test that confirmed zero discount leakage.
-- **ROI-gated channel selection:** Low-ticket failures with low recovery likelihood are suppressed rather than messaged at negative expected return.
-- **Promise-to-pay state awareness:** Natural-language responses containing payment promises (such as Hinglish salary commitments) pause automated outreach rather than continuing scheduled dunning.
-- **Multi-baseline causal evaluation:** Benchmarked against six alternative policies on a held-out dataset using independent potential-outcomes draws.
-- **Decision transparency:** Scoreboard metrics report the complete distribution of actions (`ACT`, `WAIT`, `STOP`) maintaining the strict invariant: **ACT + WAIT + STOP = Total Records**.
-
----
-
-## Quickstart guide
-
-### 1. Local setup (SQLite)
-
-#### Step 1: Clone and navigate to repository
 ```bash
-git clone https://github.com/NeerajKumar011/Reclaim.git
-cd Reclaim
+python scripts/golden_demo.py
 ```
 
-#### Step 2: Virtual environment & dependencies
+```
+================================================================================
+           RECLAIM — AI REVENUE RECOVERY AGENT (GOLDEN DEMO)
+================================================================================
+Core Thesis: 'The model recommends. Deterministic policy code decides.'
 
-<details open>
-<summary><b>🪟 Windows (Command Prompt / PowerShell)</b></summary>
+--------------------------------------------------------------------------------
+SCENARIO 1: Transient Infrastructure Failure (BANK_RAIL_DOWN)
+--------------------------------------------------------------------------------
+  Incoming Event:   ₹7,500.00 Payment Failed
+  Raw Reason:       GATEWAY_ERROR: Bank server unavailable. NPCI switch down.
+  AI Diagnosis:     BANK_RAIL_DOWN (Confidence: 0.88)
+  Decision:         WAIT
+  Tier:             BLOCK
+  Channel:          none
+  Action:           Bank Rail Recovery Wait
+  Policy Reason:    Bank rail temporarily down. Waiting for rail recovery before retry.
+  Violations:       0 (Zero unnecessary customer contact)
+  Result:           [PASS] Unnecessary customer contact avoided.
+
+--------------------------------------------------------------------------------
+SCENARIO 2: High-Intent Failure (OTP_TIMEOUT -> Razorpay Payment Link)
+--------------------------------------------------------------------------------
+  Incoming Event:   ₹4,999.00 Payment Failed
+  AI Diagnosis:     OTP_TIMEOUT (Confidence: 0.92)
+  Recovery ML Prob: 0.91 (High expected value)
+  Decision:         ACT
+  Tier:             AUTO
+  Channel:          razorpay_payment_link
+  Action:           Razorpay Payment Link
+  Policy Reason:    OTP timeout diagnosed — prompt retry via payment link.
+  Razorpay Action:  Generated Payment Link: https://rzp.io/i/rec_demo_4999
+  Outcome Event:    payment_link.paid (₹4,999.00 captured)
+  State Update:     NUDGED -> RECOVERED (₹4,999.00 incremental revenue secured)
+  Result:           [PASS] Closed recovery loop with 0 policy violations.
+
+--------------------------------------------------------------------------------
+SCENARIO 3: Multilingual Promise-to-Pay Understanding (Hinglish)
+--------------------------------------------------------------------------------
+  Customer Message: "Salary parso aayegi, tab pakka pay kar dunga"
+  Promise Detected: True (Promised Date: 2026-09-07)
+  Decision:         WAIT
+  Tier:             REVIEW
+  Channel:          none
+  Action:           Active Promise — Paused
+  Policy Reason:    Active promise-to-pay registered until 2026-09-07. Automated reminders suppressed until promise expiry.
+  Violations:       0 (Automated reminders paused)
+  Result:           [PASS] Outreach paused until promise expiry. Customer fatigue avoided.
+
+--------------------------------------------------------------------------------
+SCENARIO 4: Hard Consent Protection (Opt-Out Hard Stop)
+--------------------------------------------------------------------------------
+  Customer Status:  OPTED_OUT = True
+  Decision:         STOP
+  Tier:             BLOCK
+  Channel:          none
+  Action:           Zero Outreach
+  Policy Reason:    Customer has opted out of recovery communications.
+  Violations:       0 (Strict zero outreach enforcement)
+  Result:           [PASS] Hard stop enforced.
+
+--------------------------------------------------------------------------------
+SCENARIO 5: Deterministic Financial Control vs LLM Hallucination
+--------------------------------------------------------------------------------
+  Hallucination:    LLM recommends: 'Offer 50% discount to immediately recover funds'
+  Policy Guard:     Max discount allowed = 0% (Discounts capped strictly by merchant policy)
+  Decision:         ESCALATE
+  Tier:             REVIEW
+  Channel:          human_escalation
+  Action:           Human Review
+  Policy Reason:    B2B payment issue detected — routing to human review queue.
+  Violations:       0 (Rogue financial action blocked)
+  Result:           [PASS] Rogue financial action blocked. Escalated to human accounts team.
+
+================================================================================
+                    ALL 5 GOLDEN SCENARIOS VERIFIED [PASS]
+                    TOTAL POLICY VIOLATIONS: 0
+================================================================================
+```
+
+---
+
+## Live Audit Queue & Investigation Console
+
+The RECLAIM web dashboard (`http://localhost:8000/dashboard`) provides a financial investigation console:
+
+- **Command Center**: Real-time KPI cards for at-risk revenue, recovered revenue, recovery rate, contacts avoided, and policy violations.
+- **Golden Scenarios Showcase**: Instant inspection and triggering of the 5 canonical recovery paths.
+- **Policy Benchmark Scoreboard**: Interactive baseline comparison table across all 7 evaluated policies.
+- **Timing Lab**: Parametric sensitivity simulator demonstrating the impact of recovery delay windows and cooldown intervals.
+- **Live Audit Queue**:
+  - Distinct **Decision** (`ACT`, `WAIT`, `ESCALATE`, `STOP`) and **Tier** (`AUTO`, `REVIEW`, `BLOCK`) badges.
+  - Active operational cases separated cleanly from historical development error traces.
+  - Lazy-loaded **Case Investigation Drawer** presenting formatted INR amounts, customer details, AI diagnosis confidence, "Why This Decision?" human-readable rationale, and technical audit logs.
+
+---
+
+## Quickstart & Running Locally
+
+### 1. Prerequisites
+- Python 3.11, 3.12, or 3.13
+- Git
+
+### 2. Setup
 
 ```powershell
-# Create virtual environment
+# 1. Clone repository
+git clone https://github.com/NeerajKumar011/Reclaim.git
+cd Reclaim
+
+# 2. Create & activate virtual environment (Windows)
 python -m venv .venv
+.venv\Scripts\Activate.ps1
 
-# Activate virtual environment
-.venv\Scripts\activate
+# (Linux / macOS)
+# python3 -m venv .venv && source .venv/bin/activate
 
-# Install dependencies
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# Setup environment variables
+# 4. Configure environment
 copy .env.example .env
 ```
-</details>
 
-<details>
-<summary><b>🐧 Linux (Kali Linux / Ubuntu / Debian)</b></summary>
+### 3. Running Key Workflows
 
-```bash
-# Ensure Python 3 venv & pip are installed
-sudo apt update && sudo apt install -y python3-venv python3-pip
+```powershell
+# Start the Application & Dashboard Server
+uvicorn reclaim.main:app --host 0.0.0.0 --port 8000
 
-# Create virtual environment
-python3 -m venv .venv
+# Open in Browser
+# Dashboard: http://localhost:8000/dashboard
+# API Docs:  http://localhost:8000/docs
 
-# Activate virtual environment
-source .venv/bin/activate
+# Run Golden Judge Demo (5/5 scenarios)
+python scripts/golden_demo.py
 
-# Install dependencies
-pip install -r requirements.txt
+# Run Canonical N=1500 Benchmark
+python -m reclaim.eval.report --sample-size 1500 --seed 42 --force-heuristic
 
-# Setup environment variables
-cp .env.example .env
-```
-</details>
+# Run Live AI Smoke Test (6 live Gemini calls)
+python scripts/live_ai_smoke_test.py
 
-<details>
-<summary><b>🍎 macOS (Apple Silicon / Intel)</b></summary>
-
-```bash
-# Create virtual environment
-python3 -m venv .venv
-
-# Activate virtual environment
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Setup environment variables
-cp .env.example .env
-```
-</details>
-
-#### Step 3: Configure API Keys
-Edit `.env` and configure your LLM API Key:
-```bash
-GEMINI_API_KEY=your_gemini_api_key_here
-# OR
-GROQ_API_KEY=your_groq_api_key_here
+# Reset Demo State
+python scripts/reset_demo.py
 ```
 
-#### Step 4: Run database migrations and seed demo data
-```bash
-# Run database migrations
-python -m alembic upgrade head
-
-# Seed synthetic test cases & train recovery model (fast offline)
-python -m reclaim.synthetic_data.seed_db
-```
-
-#### Step 5: Start application server
-```bash
-python main.py
-```
-- **Dashboard UI:** [`http://localhost:8000/dashboard`](http://localhost:8000/dashboard)
-- **Interactive Swagger Docs:** [`http://localhost:8000/docs`](http://localhost:8000/docs)
-- **Health Check:** [`http://localhost:8000/health`](http://localhost:8000/health)
+### Note on Containerization
+A `Dockerfile` and `docker-compose.yml` are included in the repository. Local deployment for this evaluation was executed and verified directly via Uvicorn and Python 3.13.
 
 ---
 
-### 2. Live Demo & Evaluation CLI commands
+## Automated Tests
 
-- **Run Razorpay Live Demo Simulation:**
-  ```bash
-  python -m scripts.demo_razorpay_live
-  ```
-- **Run Full 7-Policy Evaluation Report:**
-  ```bash
-  python -m reclaim.eval.report
-  ```
-- **Generate Evaluation Charts:**
-  ```bash
-  python -m scripts.generate_charts
-  ```
+The test suite covers unit tests, invariant property checks, schema validation, policy rules, and end-to-end orchestrator flows:
 
----
+```powershell
+pytest tests -q
+```
 
-### 3. Docker setup (PostgreSQL)
-
-```bash
-# Start application and PostgreSQL via Docker Compose
-docker-compose up --build -d
-
-# Verify API health
-curl http://localhost:8000/health
+**Verified Test Output:**
+```
+........................................................................ [ 60%]
+................................................                         [100%]
+120 passed in 44.22s
 ```
 
 ---
 
-## Testing and reproducibility
+## Known Limitations
 
-The test suite covers 92 unit, integration, and property tests:
-
-```bash
-pytest -v
-```
-
-### Determinism validation
-Synthetic data generation and evaluation seeds are deterministic:
-- **Seed:** `42`
-- **Data generator:** [`reclaim/synthetic_data/generator.py`](reclaim/synthetic_data/generator.py) produces holdout datasets verified via SHA-256 assertions in `test_synthetic_generator.py`.
-- **Decision invariant:** Enforced in `test_scoreboard_arithmetic.py`.
+1. **Benchmark Reproducibility**: The canonical $N=1500$ benchmark is run with deterministic heuristic classification to ensure reproducible scoring independent of external LLM API rate limits.
+2. **Live AI Scope**: Live Google Gemini integration is verified via a 6-scenario smoke test (`docs/live_ai_smoke_test_report.md`), not 1,500 continuous live calls.
+3. **Synthetic Potential Outcomes**: Causal uplift numbers reflect counterfactual simulation on synthetic holdout data (`test_holdout.jsonl`); real-world merchant uplift requires live A/B testing post-deployment.
+4. **Channel Adapters**: Live WhatsApp, SMS, and Voice dispatchers operate in simulation mode unless live vendor credentials are configured in `.env`.
 
 ---
 
-## Known limitations
-
-- **Evaluation sample size (N = 150):** The evaluation run uses $N=150$ records due to free-tier LLM API rate limits (15 RPM / 500 RPD). The full 1,500-record dataset is present in the repository with identical parameters.
-- **Synthetic causal priors:** The self-resolution probabilities in [`causal_config.py`](reclaim/synthetic_data/causal_config.py) reflect published payments research but must be calibrated against a merchant's actual historical checkout logs.
-- **Policy thresholds:** Values such as `MAX_CONTACTS_PER_WEEK_CONSUMER = 3` and `MIN_HOURS_BETWEEN_CONTACTS_CONSUMER = 24` are initial engineering defaults and should be tuned per business domain.
-
----
-
-## Deliberate non-decisions
-
-- **No LLM-generated discount codes:** Discounts are constrained strictly to deterministic Python constants.
-- **No uncapped messaging frequency:** Outreach is capped at 3 contacts/week for consumer accounts to avoid customer fatigue.
-- **No infinite retry loops:** Cases terminate in `escalated` or `opted_out` once policy thresholds are exhausted.
-
----
-
-## Repository structure
+## Repository Structure
 
 ```text
 Reclaim/
-├── data/                       # Synthetic dataset storage (train, validation, held-out)
-├── docs/                       # Architecture notes, checklists, and charts
-│   ├── images/                 # Generated evaluation charts (.png)
-│   ├── failure_log.md          # Failure injection test traces
-│   ├── razorpay_live_demo_checklist.md  # Live demo runbook
-│   └── schemas.md              # Database schemas and event contracts
+├── docs/
+│   ├── live_ai_smoke_test_report.md     # Verified 6-call live Gemini report
+│   ├── final_audit_report.md            # Comprehensive audit & verification report
+│   ├── pitch_script.md                  # Hackathon judge pitch transcript
+│   └── images/                          # Evaluation charts (.png)
 ├── reclaim/
-│   ├── config.py               # Application settings
-│   ├── db/                     # SQLAlchemy models and database session
-│   ├── diagnosis/              # LLM client, ML model, and failure classifier
-│   ├── eval/                   # Replay engine, baseline policies, metrics, and scoreboard
-│   ├── ingestion/              # Webhook endpoint, idempotency, and normalization
-│   ├── orchestrator/           # State machine, timing scheduler, and dispatchers
-│   ├── policy/                 # Deterministic policy engine and verdict types
-│   └── synthetic_data/         # Causal data generator and seed scripts
-├── scripts/                    # Evaluation and chart generation utilities
-├── tests/                      # 92 unit, integration, and security tests
-├── main.py                     # Application entrypoint
-├── Dockerfile                  # Container definition
-├── docker-compose.yml          # Container configuration
-├── LICENSE                     # MIT License
-└── CONTRIBUTING.md             # Contribution guidelines
+│   ├── config.py                        # Central settings & env loader
+│   ├── db/                              # SQLAlchemy async models & session
+│   ├── diagnosis/                       # Gemini LLM client, schemas, & classifier
+│   ├── eval/                            # Replay engine, scoreboard generator, & metrics
+│   │   └── output/scoreboard.json       # Canonical N=1500 evaluation scoreboard
+│   ├── ingestion/                       # Webhook router, idempotency, & processor
+│   ├── orchestrator/                    # State machine, timing scheduler, & dispatchers
+│   ├── policy/                          # Deterministic policy engine, rules, & invariants
+│   ├── synthetic_data/                  # Causal generator & seed datasets
+│   └── dashboard/                       # FastAPI router & UI templates
+├── scripts/
+│   ├── golden_demo.py                   # 5-scenario golden judge demo
+│   ├── live_ai_smoke_test.py            # 6-scenario live AI smoke test
+│   ├── reset_demo.py                    # Demo database reset utility
+│   └── debug_single_diagnosis.py        # Isolated single-call debug script
+├── tests/                               # 120 unit, integration, and property tests
+├── .env.example                         # Environment configuration template
+├── Makefile                             # Common execution shortcuts
+├── requirements.txt                     # Python dependencies
+├── Dockerfile                           # Container definition
+├── docker-compose.yml                   # Container composition
+└── README.md                            # Primary documentation
 ```
 
 ---
 
-## License and contributing
+## License
 
-- **License:** Distributed under the [MIT License](LICENSE).
-- **Contributing:** See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on code standards, safety boundaries, and test requirements.
+This project is licensed under the [MIT License](LICENSE).

@@ -104,11 +104,18 @@ def compute_policy_metrics(
             if o.would_self_resolve:
                 false_positive_nudge_count += 1
 
-        # Assert policy violations for RECLAIM
-        # (e.g. attempting action on blocked or illegal verdict)
+        # Assert policy violations using comprehensive PolicyInvariantEvaluator
         if policy_name == "RECLAIM":
-            if o.verdict.decision == Decision.ALLOW and o.dispatched_channel == "none":
-                policy_violation_count += 1
+            from reclaim.policy.invariants import PolicyInvariantEvaluator
+            is_b2b = o.diagnosed_cause in ("B2B_CASH_CONSTRAINED", "B2B_DISPUTE")
+            inv_report = PolicyInvariantEvaluator.check_verdict_invariants(
+                verdict=o.verdict,
+                opted_out=False,
+                max_contacts=5 if is_b2b else 3,
+                min_hours=12.0 if is_b2b else 24.0,
+                diagnosis_cause=o.diagnosed_cause,
+            )
+            policy_violation_count += inv_report.total_violations
 
     # Incremental recovery: sum of amounts where our nudge caused the recovery
     # (not counting self-resolvers that would have recovered anyway).

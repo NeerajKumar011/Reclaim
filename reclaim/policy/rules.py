@@ -12,6 +12,7 @@ Check order inside evaluate() (must not be reordered):
   7. Cause-branching / channel selection -> final ALLOW
 """
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from reclaim.db.models import Customer, RecoveryMemory
@@ -97,38 +98,36 @@ def evaluate(
     customer: Customer,
     recovery_memory: Optional[RecoveryMemory] = None,
     amount_paise: int = 0,
-    # --- New optional context params (safe defaults preserve existing behaviour) ---
+    # --- Context params (safe defaults preserve existing behaviour) ---
     confidence: float = 1.0,
     contacts_this_week: int = 0,
     hours_since_last_contact: float = float("inf"),
     recovery_probability: float = 1.0,
     daily_spend_so_far_paise: int = 0,
+    is_terminal_state: bool = False,
+    has_active_promise: Optional[bool] = None,
+    now: Optional[datetime] = None,
 ) -> PolicyVerdict:
     """Evaluate recovery policy rules deterministically.
 
-    Args:
-        diagnosis_cause:          Taxonomy cause string from DiagnosisOutput.
-        customer:                 ORM Customer object (opted_out checked here).
-        recovery_memory:          Optional recovery memory (fatigue, preferred channel).
-        amount_paise:             Transaction amount in paise.
-        confidence:               Diagnosis confidence score in [0.0, 1.0].
-                                  Defaults to 1.0 so legacy callers always route AUTO.
-        contacts_this_week:       How many times this customer was already contacted this
-                                  rolling 7-day window. Default 0 = no compliance block.
-        hours_since_last_contact: Hours elapsed since the last outbound nudge.
-                                  Default inf = no cooldown block.
-        recovery_probability:     Estimated probability the customer will recover if nudged.
-                                  Default 1.0 = maximum expected-value; ROI gate never blocks.
-        daily_spend_so_far_paise: Cumulative intervention spend so far today (paise).
-                                  Default 0 = no budget-cap block.
+    Check order inside evaluate() (strictly enforced):
+      1. Opt-out check (hard stop)
+      2. Terminal state check (already recovered / closed)
+      3. Active Promise-to-Pay suppression guard
+      4. Cooldown / Contact-frequency compliance guard
+      5. Confidence tier routing
+      6. Recovery ROI gate
+      7. Daily budget cap
+      8. Fatigue check (URGENT_CAUSES bypass)
+      9. Cause-branching & channel selection -> final ALLOW / MODIFY / BLOCK
 
     Returns:
         PolicyVerdict with decision (ALLOW/MODIFY/BLOCK), channel, reason, tier,
-        and max_discount_paise.  The discount ceiling is NEVER set by LLM output.
+        and max_discount_paise. The discount ceiling is NEVER set by LLM output.
     """
 
     # ------------------------------------------------------------------
-    # 1. Opt-out check (unchanged)
+    # 1. Opt-out check (Hard stop — zero contact permitted)
     # ------------------------------------------------------------------
     if getattr(customer, "opted_out", False):
         return PolicyVerdict(
@@ -140,8 +139,53 @@ def evaluate(
         )
 
     # ------------------------------------------------------------------
-    # 2. Cooldown / contact-frequency guard
-    #    (internal contact-fatigue policy — not an external regulatory claim)
+    # 2. Terminal state check (Prevent stale/repeated outreach on resolved cases)
+    # ------------------------------------------------------------------
+    if is_terminal_state:
+        return PolicyVerdict(
+            decision=Decision.BLOCK,
+            channel="none",
+            reason="Case is already in a terminal state (recovered/opted-out). Outreach suppressed.",
+            tier=Tier.BLOCK,
+            max_discount_paise=0,
+        )
+
+    # ------------------------------------------------------------------
+    # 3. Active Promise-to-Pay suppression guard
+    # If customer has promised to pay by a future date, suppress
+    # automated outreach nudges to avoid customer fatigue / annoyance.
+    # ------------------------------------------------------------------
+    current_dt = now or datetime.now(timezone.utc)
+    active_promise = False
+    promise_date_str = ""
+
+    if has_active_promise is not None:
+        active_promise = has_active_promise
+    elif recovery_memory and getattr(recovery_memory, "promise_to_pay_date", None):
+        p_date = recovery_memory.promise_to_pay_date
+        if p_date:
+            if p_date.tzinfo is None:
+                p_date = p_date.replace(tzinfo=timezone.utc)
+            if p_date >= current_dt:
+                active_promise = True
+                promise_date_str = p_date.strftime("%Y-%m-%d")
+
+    if active_promise:
+        return PolicyVerdict(
+            decision=Decision.MODIFY,
+            channel="none",
+            reason=(
+                f"Active promise-to-pay registered"
+                + (f" until {promise_date_str}" if promise_date_str else "")
+                + ". Automated reminders suppressed until promise expiry."
+            ),
+            tier=Tier.REVIEW,
+            max_discount_paise=0,
+        )
+
+    # ------------------------------------------------------------------
+    # 4. Cooldown / contact-frequency guard
+    #    (internal contact-fatigue policy — consumer 3/wk, B2B 5/wk)
     # ------------------------------------------------------------------
     is_b2b = diagnosis_cause in B2B_CAUSES
     max_contacts = MAX_CONTACTS_PER_WEEK_B2B if is_b2b else MAX_CONTACTS_PER_WEEK_CONSUMER
@@ -174,7 +218,7 @@ def evaluate(
         )
 
     # ------------------------------------------------------------------
-    # 3. Confidence tier routing
+    # 5. Confidence tier routing
     # ------------------------------------------------------------------
     if confidence >= CONFIDENCE_AUTO_THRESHOLD:
         effective_tier = Tier.AUTO
@@ -195,7 +239,7 @@ def evaluate(
         )
 
     # ------------------------------------------------------------------
-    # 4. Recovery ROI gate
+    # 6. Recovery ROI gate
     # Gate channel selection through MIN_EXPECTED_VALUE_MULTIPLE.
     # Only evaluated when amount_paise > 0; zero-amount events are skipped.
     # razorpay_payment_link has cost=0 so it always clears the bar.
@@ -224,7 +268,7 @@ def evaluate(
                 )
 
     # ------------------------------------------------------------------
-    # 5. Daily budget cap
+    # 7. Daily budget cap
     # ------------------------------------------------------------------
     if daily_spend_so_far_paise >= DAILY_BUDGET_CAP_PAISE:
         return PolicyVerdict(
@@ -240,13 +284,15 @@ def evaluate(
         )
 
     # ------------------------------------------------------------------
-    # 6. Fatigue check (with URGENT_CAUSES bypass — unchanged logic)
-    # URGENT_CAUSES (currently: BANK_RAIL_DOWN) are exempt from fatigue
-    # suppression because their cause-branch issues the correct BLOCK reason
-    # below.  Blocking them here with FATIGUE_BLOCK_REASON would produce a
-    # misleading audit trail.
+    # 8. Fatigue check (with URGENT_CAUSES bypass)
+    # URGENT_CAUSES (e.g. BANK_RAIL_DOWN) are exempt from generic fatigue
+    # suppression because their cause-branch issues the specific rail cooldown reason.
     # ------------------------------------------------------------------
-    fatigue = recovery_memory.fatigue_score_last_computed if recovery_memory else 0.0
+    fatigue = (
+        recovery_memory.fatigue_score_last_computed
+        if (recovery_memory and recovery_memory.fatigue_score_last_computed is not None)
+        else 0.0
+    )
     if fatigue > MAX_FATIGUE_SCORE and diagnosis_cause not in URGENT_CAUSES:
         return PolicyVerdict(
             decision=Decision.BLOCK,
@@ -261,7 +307,7 @@ def evaluate(
     )
 
     # ------------------------------------------------------------------
-    # 7. Cause-branching / channel selection (discount ceiling unchanged)
+    # 9. Cause-branching / channel selection (discount ceiling strictly bounded)
     # ------------------------------------------------------------------
     if diagnosis_cause == "INSUFFICIENT_FUNDS":
         channel = preferred_channel or "whatsapp"

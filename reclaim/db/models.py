@@ -242,6 +242,12 @@ class RecoveryMemory(Base):
     fatigue_score_last_computed: Mapped[float] = mapped_column(
         default=0.0, nullable=False
     )
+    promise_to_pay_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_outcome: Mapped[str | None] = mapped_column(
+        String(50), nullable=True
+    )
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )

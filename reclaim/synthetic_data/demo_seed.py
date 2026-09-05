@@ -45,21 +45,21 @@ async def seed_curated_demo_dataset() -> int:
     now = _utc_now()
 
     async with factory() as session:
-        # Scenario 1: INSUFFICIENT_FUNDS — BLOCKED on first pass (High Fatigue)
+        # Scenario 1: B2B Purchase-Order Mismatch — ESCALATED to Human Review (Zero Discount Leak)
         c1 = Customer(
             id=uuid.UUID("10000000-0000-0000-0000-000000000001"),
-            razorpay_customer_id="cust_demo_funds_001",
-            name="Aarav Sharma",
-            email="aarav.sharma@example.com",
+            razorpay_customer_id="cust_demo_b2b_001",
+            name="Aarav Sharma (Horizon Tech)",
+            email="aarav.sharma@horizontech.com",
             phone="+919876543210",
             preferred_language="en",
             opted_out=False,
         )
         e1 = Event(
             id=uuid.UUID("20000000-0000-0000-0000-000000000001"),
-            razorpay_event_id="evt_demo_funds_001",
+            razorpay_event_id="evt_demo_b2b_001",
             event_type=EventType.payment_failed,
-            raw_payload={"failure_reason_raw": "INSUFFICIENT_FUNDS", "amount": 750000},
+            raw_payload={"failure_reason_raw": "PO_MISMATCH", "amount": 25000000},
             processing_status=ProcessingStatus.processed,
             received_at=now - timedelta(minutes=45),
         )
@@ -67,28 +67,28 @@ async def seed_curated_demo_dataset() -> int:
             id=uuid.UUID("30000000-0000-0000-0000-000000000001"),
             customer_id=c1.id,
             event_id=e1.id,
-            amount=7500.00,
-            state=RecoveryStateEnum.waiting,
+            amount=250000.00,
+            state=RecoveryStateEnum.escalated,
             updated_at=now - timedelta(minutes=40),
         )
         m1 = RecoveryMemory(
             customer_id=c1.id,
-            fatigue_score_last_computed=0.88,
-            historical_response_rate=0.15,
-            preferred_channel="sms",
+            fatigue_score_last_computed=0.15,
+            historical_response_rate=0.90,
+            preferred_channel="email",
         )
         log1 = AuditLog(
             id=uuid.UUID("40000000-0000-0000-0000-000000000001"),
             event_id=e1.id,
             recovery_state_id=rs1.id,
             actor="policy_engine",
-            action="evaluate_and_block",
-            reason="Diagnosed cause INSUFFICIENT_FUNDS under high fatigue score (0.88) and low response rate (0.15). Decision: BLOCK to prevent customer annoyance.",
-            metadata_={"customer_id": str(c1.id), "tier": "BLOCK"},
+            action="human_escalation",
+            reason="High-value B2B receivable with purchase-order mismatch. Automated collection is paused and routed to accounts-receivable review.",
+            metadata_={"customer_id": str(c1.id), "tier": "REVIEW", "decision": "ESCALATE"},
             created_at=now - timedelta(minutes=40),
         )
 
-        # Scenario 2: Hinglish Promise-to-Pay Extraction ("salary parso aayegi bhai")
+        # Scenario 2: Hinglish Promise-to-Pay Understanding ("salary parso aayegi bhai")
         c2 = Customer(
             id=uuid.UUID("10000000-0000-0000-0000-000000000002"),
             razorpay_customer_id="cust_demo_hinglish_002",
@@ -136,12 +136,12 @@ async def seed_curated_demo_dataset() -> int:
             recovery_state_id=rs2.id,
             actor="promise_extractor",
             action="extract_promise",
-            reason="Customer replied in Hinglish: 'salary parso aayegi bhai, tab kar dunga'. Extracted promised payment date: 2026-08-31. Reminders suppressed until 2026-09-01.",
-            metadata_={"customer_id": str(c2.id), "promised_date": "2026-08-31"},
+            reason="Customer has an active Promise-to-Pay commitment until 2026-09-07. Automated reminders are suppressed until the commitment window expires.",
+            metadata_={"customer_id": str(c2.id), "promised_date": "2026-09-07", "tier": "REVIEW", "decision": "WAIT"},
             created_at=now - timedelta(hours=1),
         )
 
-        # Scenario 3: BANK_RAIL_DOWN — Infrastructure Outage BLOCK
+        # Scenario 3: BANK_RAIL_DOWN — Infrastructure Outage WAIT
         c3 = Customer(
             id=uuid.UUID("10000000-0000-0000-0000-000000000003"),
             razorpay_customer_id="cust_demo_bankdown_003",
@@ -172,13 +172,13 @@ async def seed_curated_demo_dataset() -> int:
             event_id=e3.id,
             recovery_state_id=rs3.id,
             actor="policy_engine",
-            action="evaluate_and_block",
-            reason="Bank rail downtime detected for HDFC UPI gateway. Recovery probability is low during infrastructure outages. Decision: BLOCK to avoid sending useless nudges.",
-            metadata_={"customer_id": str(c3.id), "tier": "BLOCK"},
+            action="evaluate_and_wait",
+            reason="Payment rail appears temporarily unavailable. Repeated customer outreach would not improve recoverability, so the agent waits for rail recovery.",
+            metadata_={"customer_id": str(c3.id), "tier": "AUTO", "decision": "WAIT"},
             created_at=now - timedelta(minutes=18),
         )
 
-        # Scenario 4: End-to-End Recovered Case with Full Audit Trail
+        # Scenario 4: End-to-End Recovered Case with Full Audit Trail (OTP_TIMEOUT)
         c4 = Customer(
             id=uuid.UUID("10000000-0000-0000-0000-000000000004"),
             razorpay_customer_id="cust_demo_recovered_004",
@@ -220,8 +220,8 @@ async def seed_curated_demo_dataset() -> int:
             recovery_state_id=rs4.id,
             actor="policy_engine",
             action="evaluate_and_dispatch",
-            reason="High recovery probability (0.92) for OTP_TIMEOUT. Authorized channel razorpay_payment_link with 0 paise discount.",
-            metadata_={"customer_id": str(c4.id), "tier": "AUTO"},
+            reason="High-intent payment authentication failure with sufficient recovery probability. A Razorpay Payment Link is issued to provide a fresh payment path.",
+            metadata_={"customer_id": str(c4.id), "tier": "AUTO", "decision": "ACT"},
             created_at=now - timedelta(hours=4, minutes=50),
         )
         log4_3 = AuditLog(
@@ -235,7 +235,7 @@ async def seed_curated_demo_dataset() -> int:
             created_at=now - timedelta(hours=4),
         )
 
-        # Scenario 5: Customer Opt-Out (Immediate BLOCK)
+        # Scenario 5: Customer Opt-Out (Immediate BLOCK & Zero Outreach)
         c5 = Customer(
             id=uuid.UUID("10000000-0000-0000-0000-000000000005"),
             razorpay_customer_id="cust_demo_optout_005",
@@ -267,8 +267,8 @@ async def seed_curated_demo_dataset() -> int:
             recovery_state_id=rs5.id,
             actor="policy_engine",
             action="evaluate_and_block",
-            reason="Customer has explicitly opted out of recovery communications. Unconditional BLOCK enforced.",
-            metadata_={"customer_id": str(c5.id), "tier": "BLOCK"},
+            reason="Customer has explicitly opted out of recovery communications. All automated outreach is stopped.",
+            metadata_={"customer_id": str(c5.id), "tier": "BLOCK", "decision": "STOP"},
             created_at=now - timedelta(minutes=9),
         )
 

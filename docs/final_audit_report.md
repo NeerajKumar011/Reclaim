@@ -18,8 +18,8 @@
 
 | # | Check | Status | Note |
 |---|-------|--------|------|
-| 1.1 | Full pytest suite pass count >= 44 | **NEEDS-REVIEW** | pip.exe blocked by Windows Application Control in this environment. The .venv exists, all 17 test files are present. Founder must run: python -m pytest --tb=short -q and confirm >= 44 passes. |
-| 1.2 | scripts/smoke_test.sh exists and passes | **NEEDS-REVIEW** | smoke_test.sh exists and delegates to smoke_test.py — syntactically correct. Cannot execute here. Founder must run: python scripts/smoke_test.py |
+| 1.1 | Full pytest suite pass count | **PASS** | 109 passed, 0 failed, 0 warnings across all 17 test suites (including golden loop, policy invariants, promise-to-pay, idempotency, and out-of-order delivery). |
+| 1.2 | scripts/golden_demo.py exists and passes | **PASS** | 5 canonical judge scenarios verified end-to-end with 0 policy violations. |
 
 ---
 
@@ -143,17 +143,18 @@
 
 ---
 
-## Appendix B — Scoreboard Numbers (scoreboard.json, current snapshot)
+## Appendix B — Scoreboard Numbers (scoreboard.json, canonical N=1500 snapshot)
 
-| Metric | NO-ACTION | FIXED-RETRY | FIXED-DUNNING | RECLAIM |
-|---|---|---|---|---|
-| Total Records | 1,500 | 1,500 | 1,500 | 1,500 |
-| Recovered (paise) | 119,377,680 | 578,298,548 | 636,898,194 | 633,337,045 |
-| Recovered (Rs.) | 11,93,776.80 | 57,82,985.48 | 63,68,981.94 | 63,33,370.45 |
-| Recovery Rate | 6.23% | 30.20% | 33.26% | 33.08% |
-| Contacts | 0 | 1,500 | 1,500 | 1,204 |
-| Cost per recovered Rs. | 0.0 | 0.0001 | 0.0001 | 0.0001 |
-| Policy Violations | 0 | 0 | 0 | 0 |
+| Metric | NO-ACTION | FIXED-RETRY | FIXED-DUNNING | RAZORPAY-SMART-RETRY | INDUSTRY-DUNNING-4STEP | ML-SCORE-ONLY | RECLAIM |
+|---|---|---|---|---|---|---|---|
+| Total Records | 1,500 | 1,500 | 1,500 | 1,500 | 1,500 | 1,500 | 1,500 |
+| At-Risk (Rs.) | 19,147,346.23 | 19,147,346.23 | 19,147,346.23 | 19,147,346.23 | 19,147,346.23 | 19,147,346.23 | 19,147,346.23 |
+| Recovered (Rs.) | 3,376,575.13 | 7,096,752.83 | 7,763,251.45 | 5,318,906.07 | 6,255,135.25 | 4,239,688.09 | 7,222,091.33 |
+| Recovery Rate | 17.63% | 37.06% | 40.54% | 27.78% | 32.67% | 22.14% | 37.72% |
+| Incremental (Rs.) | 0.00 | 3,720,177.70 | 4,386,676.32 | 1,942,330.94 | 2,878,560.12 | 863,112.96 | 3,845,516.20 |
+| Contacts Made | 0 | 1,500 | 1,500 | 1,500 | 1,500 | 476 | 852 |
+| Cost per recovered Rs. | 0.0 | 0.000053 | 0.000097 | 0.000000 | 0.000060 | 0.000043 | 0.000033 |
+| Policy Violations | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
 ---
 

@@ -206,8 +206,13 @@ def run_evaluation(
     holdout_path: Path = TEST_HOLDOUT_PATH,
     sample_size: Optional[int] = 150,
     seed: int = 42,
+    force_heuristic: bool = False,
 ) -> str:
     """Run evaluation pipeline against held-out dataset and print table & save scoreboard.json."""
+    import os
+    if force_heuristic:
+        os.environ["RECLAIM_FORCE_HEURISTIC"] = "1"
+
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -216,11 +221,11 @@ def run_evaluation(
     model = _llm_mod.MODEL_NAME if provider == "gemini" else _llm_mod.GROQ_MODEL_NAME
 
     print(f"\n[EVALUATION CONFIG]")
-    print(f"  Dataset:     {holdout_path.name}")
-    print(f"  Sample Size: N={sample_size if sample_size is not None else 'ALL (1500)'} (seed={seed})")
-    print(f"  Provider:    {provider}")
-    print(f"  Model:       {model}")
-    print(f"  Reason:      Free-tier rate limits (~15-30 RPM, 1500 RPD)\n")
+    print(f"  Dataset:         {holdout_path.name}")
+    print(f"  Sample Size:     N={sample_size if sample_size is not None else 'ALL (1500)'} (seed={seed})")
+    print(f"  Provider:        {provider if not os.environ.get('RECLAIM_FORCE_HEURISTIC') else 'deterministic-heuristic'}")
+    print(f"  Model:           {model if not os.environ.get('RECLAIM_FORCE_HEURISTIC') else 'heuristic-classifier'}")
+    print(f"  Force Heuristic: {bool(os.environ.get('RECLAIM_FORCE_HEURISTIC'))}\n")
 
     initial_counter = _llm_mod._llm_call_counter
 
@@ -234,10 +239,12 @@ def run_evaluation(
     generate_scoreboard_json(metrics_map, replay_results=replay_results, sample_size=sample_size, seed=seed)
 
     calls_made = _llm_mod._llm_call_counter - initial_counter
+    diag_provider = "deterministic heuristic" if calls_made == 0 else f"live LLM ({provider})"
     print(f"[LLM CALL VERIFICATION]")
-    print(f"  Total live LLM calls made during eval: {calls_made}")
-    print(f"  Calls matched unique sample records:   {actual_n}")
-    print(f"  Status: {'REAL LIVE API CALLS CONFIRMED' if calls_made > 0 else 'WARNING: FALLBACK USED'}\n")
+    print(f"  Total live LLM calls made during eval:   {calls_made}")
+    print(f"  Records processed by diagnosis pipeline: {actual_n}")
+    print(f"  Diagnosis provider:                      {diag_provider}")
+    print(f"  Status: {'REAL LIVE API CALLS CONFIRMED' if calls_made > 0 else 'DETERMINISTIC OFFLINE HEURISTIC USED'}\n")
 
     return table_text
 
@@ -246,7 +253,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run RECLAIM held-out evaluation")
     parser.add_argument("--sample-size", "-n", type=int, default=150, help="Sample size N to evaluate (default: 150)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducible sampling (default: 42)")
+    parser.add_argument("--force-heuristic", action="store_true", help="Force deterministic heuristic diagnosis (offline benchmark)")
     args = parser.parse_args()
 
-    run_evaluation(sample_size=args.sample_size, seed=args.seed)
+    run_evaluation(sample_size=args.sample_size, seed=args.seed, force_heuristic=args.force_heuristic)
+
 
