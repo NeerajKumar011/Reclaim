@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-05T05:07:10.196296+00:00",
+  "generated_at": "2026-09-05T08:00:49.498659+00:00",
   "eval_framework_version": "potential_outcomes_v2",
   "outcome_model": "Potential-outcomes framework: each record receives two independent draws (would_self_resolve, uplift_realized) seeded from event_id. NO-ACTION outcome = would_self_resolve only. ALLOW/MODIFY outcome = would_self_resolve OR uplift_realized. incremental_recovered = nudge caused recovery (not self-resolution).",
   "dataset": "test_holdout.jsonl",
@@ -31,7 +31,7 @@
       "false_positive_nudge_count": 0,
       "false_positive_rate_pct": 0.0,
       "policy_violation_count": 0,
-      "avg_time_to_recovery_hours": 8.25,
+      "avg_time_to_recovery_hours": 5.65,
       "decision_distribution": {
         "ACT": {
           "count": 0,
@@ -75,7 +75,7 @@
       "false_positive_nudge_count": 31,
       "false_positive_rate_pct": 20.67,
       "policy_violation_count": 0,
-      "avg_time_to_recovery_hours": 18.17,
+      "avg_time_to_recovery_hours": 13.14,
       "decision_distribution": {
         "ACT": {
           "count": 150,
@@ -119,7 +119,7 @@
       "false_positive_nudge_count": 31,
       "false_positive_rate_pct": 20.67,
       "policy_violation_count": 0,
-      "avg_time_to_recovery_hours": 16.67,
+      "avg_time_to_recovery_hours": 12.11,
       "decision_distribution": {
         "ACT": {
           "count": 150,
@@ -163,7 +163,7 @@
       "false_positive_nudge_count": 31,
       "false_positive_rate_pct": 20.67,
       "policy_violation_count": 0,
-      "avg_time_to_recovery_hours": 13.64,
+      "avg_time_to_recovery_hours": 8.26,
       "decision_distribution": {
         "ACT": {
           "count": 150,
@@ -207,7 +207,7 @@
       "false_positive_nudge_count": 31,
       "false_positive_rate_pct": 20.67,
       "policy_violation_count": 0,
-      "avg_time_to_recovery_hours": 17.49,
+      "avg_time_to_recovery_hours": 15.0,
       "decision_distribution": {
         "ACT": {
           "count": 150,
@@ -251,7 +251,7 @@
       "false_positive_nudge_count": 15,
       "false_positive_rate_pct": 33.33,
       "policy_violation_count": 0,
-      "avg_time_to_recovery_hours": 10.74,
+      "avg_time_to_recovery_hours": 7.12,
       "decision_distribution": {
         "ACT": {
           "count": 45,
@@ -280,40 +280,40 @@
       "total_records": 150,
       "total_at_risk_paise": 205120127,
       "total_at_risk_rs": 2051201.27,
-      "total_recovered_paise": 68077907,
-      "total_recovered_rs": 680779.07,
-      "recovery_rate_pct": 33.19,
-      "incremental_recovery_paise": 51361602,
-      "incremental_recovery_rs": 513616.02,
+      "total_recovered_paise": 62195258,
+      "total_recovered_rs": 621952.58,
+      "recovery_rate_pct": 30.32,
+      "incremental_recovery_paise": 45478953,
+      "incremental_recovery_rs": 454789.53,
       "would_self_resolve_count": 31,
-      "incremental_recovered_count": 34,
-      "total_intervention_cost_paise": 3225,
-      "total_intervention_cost_rs": 32.25,
-      "cost_per_recovered_rupee": 4.737e-05,
-      "contact_count": 106,
-      "revenue_recovered_per_contact_rs": 6422.44,
-      "false_positive_nudge_count": 19,
-      "false_positive_rate_pct": 17.92,
+      "incremental_recovered_count": 29,
+      "total_intervention_cost_paise": 2900,
+      "total_intervention_cost_rs": 29.0,
+      "cost_per_recovered_rupee": 4.663e-05,
+      "contact_count": 102,
+      "revenue_recovered_per_contact_rs": 6097.57,
+      "false_positive_nudge_count": 18,
+      "false_positive_rate_pct": 17.65,
       "policy_violation_count": 0,
-      "avg_time_to_recovery_hours": 17.45,
+      "avg_time_to_recovery_hours": 12.86,
       "decision_distribution": {
         "ACT": {
-          "count": 106,
-          "pct": 70.67,
+          "count": 102,
+          "pct": 68.0,
           "note": "ALLOW decisions (dispatched to a channel)"
         },
         "WAIT": {
-          "count": 29,
-          "pct": 19.33,
+          "count": 24,
+          "pct": 16.0,
           "note": "MODIFY decisions (enqueued for human review)"
         },
         "STOP": {
-          "count": 15,
-          "pct": 10.0,
+          "count": 24,
+          "pct": 16.0,
           "note": "BLOCK decisions (cooldown, opt-out, budget cap, ROI gate)"
         },
         "ESCALATE_sub": {
-          "count": 15,
+          "count": 0,
           "note": "Sub-count of ACT: ALLOW records routed via REVIEW tier. NOT additive to ACT+WAIT+STOP."
         },
         "_invariant": "ACT.count + WAIT.count + STOP.count == total_records"

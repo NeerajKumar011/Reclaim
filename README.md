@@ -81,7 +81,7 @@ flowchart TD
         C2 -- Clear --> C3{3. Confidence Tier Routing}
         C3 -- Conf < 0.40 --> M_REV[MODIFY: Enqueue Human Review]
         C3 -- Conf 0.40..0.70 --> M_REV
-        C3 -- Conf >= 0.70 --> C4{4. Recovery ROI Gate<br/>E[Recovery] >= 10x Cost}
+        C3 -- Conf >= 0.70 --> C4{"4. Recovery ROI Gate<br/>E(Recovery) >= 10x Cost"}
         C4 -- ROI Negative --> B_ROI[BLOCK: negative_roi]
         C4 -- ROI Positive --> C5{5. Budget Cap & Fatigue}
         C5 -- Budget Exceeded --> B_BUD[BLOCK: budget_cap]
@@ -115,19 +115,23 @@ During failure-injection testing recorded in [`docs/failure_log.md`](docs/failur
 
 ### 2. Recovery ROI gate
 Outbound messaging incurs direct marginal costs (WhatsApp ₹0.50, SMS ₹0.25, Voice ₹1.50, Human Escalation ₹50.00). Contacting customers for micro-transactions with low recovery probability can result in negative unit economics:
-$$\text{Expected Recovery (paise)} = \text{Recovery Probability} \times \text{Amount (paise)}$$
-$$\text{Condition: } \text{Expected Recovery} \ge \text{Channel Cost (paise)} \times \text{MIN\_EXPECTED\_VALUE\_MULTIPLE}$$
+
+```text
+Expected Recovery (paise) = Recovery Probability × Amount (paise)
+ROI Gate Condition: Expected Recovery ≥ Channel Cost (paise) × 10
+```
+
 In [`reclaim/policy/rules.py`](reclaim/policy/rules.py), `MIN_EXPECTED_VALUE_MULTIPLE = 10`. If an intervention has an expected recovery below 10 times the channel cost, the engine emits `BLOCK: negative_expected_roi`.
 
 ### 3. Confidence-tier routing
-- **Tier.AUTO ($\text{Confidence} \ge 0.70$):** High-certainty diagnoses (such as explicit bank outage codes or clear OTP timeouts) dispatch automatically.
-- **Tier.REVIEW ($0.40 \le \text{Confidence} < 0.70$):** Ambiguous failure reasons or complex B2B invoice disputes route to `ReviewQueue` for human oversight.
-- **Tier.BLOCK ($\text{Confidence} < 0.40$):** Low-confidence or unvalidated diagnoses are blocked from automated customer contact.
+- **Tier.AUTO (Confidence ≥ 0.70):** High-certainty diagnoses (such as explicit bank outage codes or clear OTP timeouts) dispatch automatically.
+- **Tier.REVIEW (0.40 ≤ Confidence < 0.70):** Ambiguous failure reasons or complex B2B invoice disputes route to `ReviewQueue` for human oversight.
+- **Tier.BLOCK (Confidence < 0.40):** Low-confidence or unvalidated diagnoses are blocked from automated customer contact.
 
 ### 4. Counterfactual causal evaluation
 In earlier iterations of our evaluation harness, baseline comparisons shared a single random draw for recovery, introducing correlated bias. The framework was corrected to use the Neyman-Rubin potential outcomes model:
-- $Y(0)$ (**Self-resolution draw**): Seeded from `event_id + ":self"`. Determines whether the customer would have recovered without intervention.
-- $Y(1)$ (**Channel uplift draw**): Seeded from `event_id + ":" + policy + ":" + channel`. Applied only to non-self-resolvers who received an intervention.
+- **Y(0) (Self-resolution draw):** Seeded from `event_id + ":self"`. Determines whether the customer would have recovered without intervention.
+- **Y(1) (Channel uplift draw):** Seeded from `event_id + ":" + policy + ":" + channel`. Applied only to non-self-resolvers who received an intervention.
 - **Incremental recovery:** Counted strictly when an intervention causes recovery that would not have occurred under no-action.
 
 ---
@@ -245,7 +249,7 @@ By contrast, RECLAIM made 106 contacts (a 29.3% reduction in outreach volume), g
 - **ROI-gated channel selection:** Low-ticket failures with low recovery likelihood are suppressed rather than messaged at negative expected return.
 - **Promise-to-pay state awareness:** Natural-language responses containing payment promises (such as Hinglish salary commitments) pause automated outreach rather than continuing scheduled dunning.
 - **Multi-baseline causal evaluation:** Benchmarked against six alternative policies on a held-out dataset using independent potential-outcomes draws.
-- **Decision transparency:** Scoreboard metrics report the complete distribution of actions (`ACT`, `WAIT`, `STOP`) maintaining the invariant $\text{ACT} + \text{WAIT} + \text{STOP} = \text{total\_records}$.
+- **Decision transparency:** Scoreboard metrics report the complete distribution of actions (`ACT`, `WAIT`, `STOP`) maintaining the strict invariant: **ACT + WAIT + STOP = Total Records**.
 
 ---
 
@@ -253,36 +257,116 @@ By contrast, RECLAIM made 106 contacts (a 29.3% reduction in outreach volume), g
 
 ### 1. Local setup (SQLite)
 
+#### Step 1: Clone and navigate to repository
 ```bash
-# Clone repository
-git clone https://github.com/your-org/Reclaim.git
+git clone https://github.com/NeerajKumar011/Reclaim.git
 cd Reclaim
+```
 
-# Set up Python virtual environment
+#### Step 2: Virtual environment & dependencies
+
+<details open>
+<summary><b>🪟 Windows (Command Prompt / PowerShell)</b></summary>
+
+```powershell
+# Create virtual environment
 python -m venv .venv
-# Windows:
+
+# Activate virtual environment
 .venv\Scripts\activate
-# Linux/macOS:
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Setup environment variables
+copy .env.example .env
+```
+</details>
+
+<details>
+<summary><b>🐧 Linux (Kali Linux / Ubuntu / Debian)</b></summary>
+
+```bash
+# Ensure Python 3 venv & pip are installed
+sudo apt update && sudo apt install -y python3-venv python3-pip
+
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate virtual environment
 source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
-pip install matplotlib pytest httpx
 
-# Configure environment
+# Setup environment variables
 cp .env.example .env
-# Set GEMINI_API_KEY or GROQ_API_KEY in .env
+```
+</details>
 
-# Run database migrations and seed demo data
+<details>
+<summary><b>🍎 macOS (Apple Silicon / Intel)</b></summary>
+
+```bash
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Setup environment variables
+cp .env.example .env
+```
+</details>
+
+#### Step 3: Configure API Keys
+Edit `.env` and configure your LLM API Key:
+```bash
+GEMINI_API_KEY=your_gemini_api_key_here
+# OR
+GROQ_API_KEY=your_groq_api_key_here
+```
+
+#### Step 4: Run database migrations and seed demo data
+```bash
+# Run database migrations
 python -m alembic upgrade head
-python -m reclaim.synthetic_data.seed_db
 
-# Start application server
+# Seed synthetic test cases & train recovery model (fast offline)
+python -m reclaim.synthetic_data.seed_db
+```
+
+#### Step 5: Start application server
+```bash
 python main.py
 ```
-Access the dashboard at `http://localhost:8000/dashboard`.
+- **Dashboard UI:** [`http://localhost:8000/dashboard`](http://localhost:8000/dashboard)
+- **Interactive Swagger Docs:** [`http://localhost:8000/docs`](http://localhost:8000/docs)
+- **Health Check:** [`http://localhost:8000/health`](http://localhost:8000/health)
 
-### 2. Docker setup
+---
+
+### 2. Live Demo & Evaluation CLI commands
+
+- **Run Razorpay Live Demo Simulation:**
+  ```bash
+  python -m scripts.demo_razorpay_live
+  ```
+- **Run Full 7-Policy Evaluation Report:**
+  ```bash
+  python -m reclaim.eval.report
+  ```
+- **Generate Evaluation Charts:**
+  ```bash
+  python -m scripts.generate_charts
+  ```
+
+---
+
+### 3. Docker setup (PostgreSQL)
 
 ```bash
 # Start application and PostgreSQL via Docker Compose
@@ -312,7 +396,7 @@ Synthetic data generation and evaluation seeds are deterministic:
 
 ## Known limitations
 
-- **Evaluation sample size ($N=150$):** The evaluation run uses $N=150$ records due to free-tier LLM API rate limits (15 RPM / 500 RPD). The full 1,500-record dataset is present in the repository with identical parameters.
+- **Evaluation sample size (N = 150):** The evaluation run uses $N=150$ records due to free-tier LLM API rate limits (15 RPM / 500 RPD). The full 1,500-record dataset is present in the repository with identical parameters.
 - **Synthetic causal priors:** The self-resolution probabilities in [`causal_config.py`](reclaim/synthetic_data/causal_config.py) reflect published payments research but must be calibrated against a merchant's actual historical checkout logs.
 - **Policy thresholds:** Values such as `MAX_CONTACTS_PER_WEEK_CONSUMER = 3` and `MIN_HOURS_BETWEEN_CONTACTS_CONSUMER = 24` are initial engineering defaults and should be tuned per business domain.
 
