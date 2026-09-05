@@ -424,6 +424,10 @@ async def test_semantic_reasoning_for_canonical_scenarios():
         # PO_MISMATCH
         r1 = await client.get(f"/dashboard/timeline/{id1}")
         inv1 = r1.json()["investigation"]
+        assert inv1["raw_reason"] == "PO_MISMATCH"
+        assert inv1["ai_diagnosis"] == "B2B_DISPUTE"
+        assert inv1["diagnosis"] == "B2B_DISPUTE"
+        assert inv1["raw_reason"] != inv1["ai_diagnosis"]
         assert inv1["decision"] == "ESCALATE"
         assert inv1["tier"] == "REVIEW"
         assert "purchase-order mismatch" in inv1["why_decision"]

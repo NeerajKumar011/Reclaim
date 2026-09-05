@@ -1457,9 +1457,9 @@ DASHBOARD_HTML_CONTENT = """<!DOCTYPE html>
         <!-- 2. Primary Decision & Financial Matrix -->
         <div class="inv-grid">
           <div class="inv-metric-box">
-            <div class="inv-metric-label">Diagnosis</div>
+            <div class="inv-metric-label">AI Diagnosis</div>
             <div class="inv-metric-value" id="inv-diagnosis">--</div>
-            <div style="font-size: 11px; color: var(--text-tertiary);" id="inv-confidence">Confidence: --</div>
+            <div style="font-size: 11px; color: var(--text-tertiary);" id="inv-raw-reason">Raw Reason: --</div>
           </div>
           <div class="inv-metric-box">
             <div class="inv-metric-label">Decision</div>
@@ -1711,8 +1711,9 @@ DASHBOARD_HTML_CONTENT = """<!DOCTYPE html>
       const dec = inv.decision || 'WAIT';
       badge.className = 'scenario-badge ' + (dec === 'ACT' ? 'badge-act' : (dec === 'ESCALATE' ? 'badge-escalate' : (dec === 'STOP' ? 'badge-stop' : 'badge-wait')));
 
-      document.getElementById('inv-diagnosis').innerText = inv.diagnosis || 'UNSPECIFIED';
-      document.getElementById('inv-confidence').innerText = 'Confidence: ' + (inv.confidence ? inv.confidence.toFixed(2) : '0.88');
+      document.getElementById('inv-diagnosis').innerText = inv.ai_diagnosis || inv.diagnosis || 'UNSPECIFIED';
+      const rawR = inv.raw_reason || 'N/A';
+      document.getElementById('inv-raw-reason').innerText = 'Raw: ' + rawR;
       
       const decEl = document.getElementById('inv-decision');
       decEl.innerText = dec;

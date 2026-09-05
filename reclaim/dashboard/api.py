@@ -237,14 +237,23 @@ def _resolve_case_semantics(
     latest_log: Optional[AuditLog],
 ) -> Dict[str, Any]:
     """Derive semantically consistent diagnosis, decision, tier, action, outcome, why_decision, and visibility."""
+    from reclaim.diagnosis.classifier import heuristic_classify
+
     opted_out = bool(cust.opted_out or (rs and rs.state.value == "opted_out"))
     state_val = rs.state.value if rs else "waiting"
     raw_payload = event.raw_payload if event and event.raw_payload else {}
-    diagnosed_cause = (
+    raw_failure_reason = (
         raw_payload.get("failure_reason_raw")
         or raw_payload.get("payload", {}).get("payment", {}).get("entity", {}).get("error_code")
         or "UNSPECIFIED_FAILURE"
     )
+
+    # Classify raw event into canonical 7-cause AI diagnosis
+    diag_output = heuristic_classify({
+        "failure_reason_raw": raw_failure_reason,
+        "event_category": event.event_type.value if event else "payment_failure",
+    })
+    canonical_ai_diagnosis = diag_output.cause
 
     latest_action = latest_log.action if latest_log else state_val
     latest_reason_raw = latest_log.reason if latest_log else f"Case in state {state_val}"
@@ -272,6 +281,7 @@ def _resolve_case_semantics(
         outcome = "pipeline_error_isolated"
         why_decision = "Pipeline processing exception occurred during execution. Action was safely halted and routed to engineering review to protect customer experience."
         latest_reason = "Pipeline execution error (isolated to technical logs)"
+        diagnosed_cause = "SYSTEM_ERROR"
         recovery_probability = 0.30
         confidence = 0.50
         recovered_amount_rs = 0.0
@@ -284,23 +294,25 @@ def _resolve_case_semantics(
         outcome = "hard_stop_enforced"
         why_decision = "Customer has explicitly opted out of recovery communications. All automated outreach is stopped."
         latest_reason = "Customer has explicitly opted out of recovery communications. All automated outreach is stopped."
+        diagnosed_cause = canonical_ai_diagnosis
         recovery_probability = 0.0
         confidence = 0.99
         recovered_amount_rs = 0.0
 
-    elif diagnosed_cause == "PO_MISMATCH" or state_val == "escalated" or meta.get("decision") == "ESCALATE":
+    elif canonical_ai_diagnosis in ("B2B_DISPUTE", "B2B_CASH_CONSTRAINED") or raw_failure_reason == "PO_MISMATCH" or state_val == "escalated" or meta.get("decision") == "ESCALATE":
         case_visibility = "ACTIVE"
         tier = "REVIEW"
         decision = "ESCALATE"
         action = "Human Review Escalation"
         outcome = "routed_to_review_queue"
         why_decision = "High-value B2B receivable with purchase-order mismatch. Automated collection is paused and routed to accounts-receivable review."
-        latest_reason = "High-value B2B receivable with purchase-order mismatch. Automated collection is paused and routed to accounts-receivable review."
+        latest_reason = f"High-value B2B dispute detected ({raw_failure_reason}). Automated collection is paused and routed to accounts-receivable review."
+        diagnosed_cause = canonical_ai_diagnosis if canonical_ai_diagnosis in ("B2B_DISPUTE", "B2B_CASH_CONSTRAINED") else "B2B_DISPUTE"
         recovery_probability = 0.40
-        confidence = 0.70
+        confidence = diag_output.confidence if diag_output.confidence > 0.5 else 0.82
         recovered_amount_rs = 0.0
 
-    elif state_val == "promised" or "promise" in diagnosed_cause.lower() or "promise" in latest_action.lower() or "promise" in latest_reason_raw.lower():
+    elif state_val == "promised" or "promise" in raw_failure_reason.lower() or "promise" in latest_action.lower() or "promise" in latest_reason_raw.lower():
         case_visibility = "ACTIVE"
         tier = "REVIEW"
         decision = "WAIT"
@@ -308,11 +320,12 @@ def _resolve_case_semantics(
         outcome = "reminders_suppressed"
         why_decision = "Customer has an active Promise-to-Pay commitment until 2026-09-07. Automated reminders are suppressed until the commitment window expires."
         latest_reason = "Customer has an active Promise-to-Pay commitment until 2026-09-07. Automated reminders are suppressed until the commitment window expires."
+        diagnosed_cause = canonical_ai_diagnosis
         recovery_probability = 0.75
         confidence = 0.85
         recovered_amount_rs = 0.0
 
-    elif diagnosed_cause == "BANK_RAIL_DOWN" or ("rail" in latest_reason_raw.lower() and state_val == "waiting"):
+    elif canonical_ai_diagnosis == "BANK_RAIL_DOWN" or ("rail" in latest_reason_raw.lower() and state_val == "waiting"):
         case_visibility = "ACTIVE"
         tier = "AUTO"
         decision = "WAIT"
@@ -320,11 +333,12 @@ def _resolve_case_semantics(
         outcome = "awaiting_rail_stabilization"
         why_decision = "Payment rail appears temporarily unavailable. Repeated customer outreach would not improve recoverability, so the agent waits for rail recovery."
         latest_reason = "Payment rail appears temporarily unavailable. Repeated customer outreach would not improve recoverability, so the agent waits for rail recovery."
+        diagnosed_cause = "BANK_RAIL_DOWN"
         recovery_probability = 0.15
         confidence = 0.88
         recovered_amount_rs = 0.0
 
-    elif diagnosed_cause == "OTP_TIMEOUT" or state_val in ("recovered", "nudged"):
+    elif canonical_ai_diagnosis == "OTP_TIMEOUT" or state_val in ("recovered", "nudged"):
         case_visibility = "ACTIVE"
         tier = "AUTO"
         decision = "ACT"
@@ -332,6 +346,7 @@ def _resolve_case_semantics(
         outcome = "payment_link.paid" if state_val == "recovered" else "awaiting_payment"
         why_decision = "High-intent payment authentication failure with sufficient recovery probability. A Razorpay Payment Link is issued to provide a fresh payment path."
         latest_reason = "High-intent payment authentication failure with sufficient recovery probability. A Razorpay Payment Link is issued to provide a fresh payment path."
+        diagnosed_cause = "OTP_TIMEOUT"
         recovery_probability = 0.91 if state_val == "recovered" else 0.88
         confidence = 0.92 if state_val == "recovered" else 0.90
         recovered_amount_rs = amount_rs if state_val == "recovered" else 0.0
@@ -344,6 +359,7 @@ def _resolve_case_semantics(
         outcome = "outreach_suppressed"
         why_decision = "Customer has elevated fatigue score or recent touchpoint. Outreach paused to prevent customer annoyance."
         latest_reason = _clean_summary_reason(latest_reason_raw)
+        diagnosed_cause = canonical_ai_diagnosis
         recovery_probability = 0.20
         confidence = 0.80
         recovered_amount_rs = 0.0
@@ -351,13 +367,14 @@ def _resolve_case_semantics(
     return {
         "case_visibility": case_visibility,
         "diagnosed_cause": diagnosed_cause,
+        "ai_diagnosis": diagnosed_cause,
+        "raw_reason": raw_failure_reason,
         "decision": decision,
         "tier": tier,
         "action": action,
         "outcome": outcome,
         "why_decision": why_decision,
         "latest_reason": latest_reason,
-        "raw_reason": latest_reason_raw,
         "recovery_probability": recovery_probability,
         "confidence": confidence,
         "recovered_amount_rs": recovered_amount_rs,
@@ -547,6 +564,8 @@ async def get_customer_timeline(
         "state": state_val,
         "status_label": state_val.upper(),
         "diagnosis": sem["diagnosed_cause"],
+        "ai_diagnosis": sem["ai_diagnosis"],
+        "raw_reason": sem["raw_reason"],
         "confidence": sem["confidence"],
         "decision": sem["decision"],
         "tier": sem["tier"],
