@@ -6,8 +6,9 @@ Endpoints:
 """
 
 import logging
+from typing import Dict, Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from reclaim.config import get_settings
@@ -94,8 +95,34 @@ async def receive_razorpay_webhook(
 
 @router.post("/test/simulate-webhook", status_code=200)
 async def simulate_webhook(
-    request: Request,
     background_tasks: BackgroundTasks,
+    payload: Dict[str, Any] = Body(
+        default={
+            "entity": "event",
+            "account_id": "acc_demo_test",
+            "event": "payment.failed",
+            "contains": ["payment"],
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": "pay_live_test_001",
+                        "amount": 250000,
+                        "currency": "INR",
+                        "status": "failed",
+                        "method": "upi",
+                        "customer_id": "cust_live_demo_1",
+                        "email": "demo_user@example.com",
+                        "contact": "+919876543210",
+                        "error_code": "BAD_REQUEST_ERROR",
+                        "error_description": "Payment failed due to insufficient funds",
+                        "created_at": 1691735748,
+                    }
+                }
+            },
+            "created_at": 1691735750,
+        },
+        description="Razorpay webhook payload to simulate",
+    ),
 ):
     """Dev-only endpoint to simulate a Razorpay webhook without signature verification.
 
@@ -108,7 +135,6 @@ async def simulate_webhook(
             detail="This endpoint is only available in dev mode (APP_ENV=dev)",
         )
 
-    payload = await request.json()
     event_name = payload.get("event", "")
 
     event_type_str = razorpay_event_to_internal(event_name)
