@@ -7,6 +7,7 @@ by reusing the existing ingestion processor pipeline (process_webhook_event).
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Dict, Any
 
@@ -89,7 +90,7 @@ def _record_to_raw_webhook(record: Dict[str, Any]) -> tuple[dict, str, str]:
     return raw_payload, event_id, event_type_str
 
 
-async def seed_database(jsonl_path: Path = TRAIN_JSONL_PATH) -> int:
+async def seed_database(jsonl_path: Path = TRAIN_JSONL_PATH, limit: int = 500) -> int:
     """Read records from train.jsonl and seed them into the database."""
     if not jsonl_path.exists():
         raise FileNotFoundError(
@@ -103,26 +104,40 @@ async def seed_database(jsonl_path: Path = TRAIN_JSONL_PATH) -> int:
 
     factory = get_session_factory()
 
-
     records_count = 0
-    async with factory() as db:
-        with open(jsonl_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                record = json.loads(line)
-                raw_payload, event_id, event_type_str = _record_to_raw_webhook(record)
+    old_heuristic_flag = os.environ.get("RECLAIM_FORCE_HEURISTIC_DIAGNOSIS")
+    os.environ["RECLAIM_FORCE_HEURISTIC_DIAGNOSIS"] = "1"
 
-                await process_webhook_event(
-                    db=db,
-                    raw_payload=raw_payload,
-                    razorpay_event_id=event_id,
-                    event_type_str=event_type_str,
-                )
-                records_count += 1
+    try:
+        async with factory() as db:
+            with open(jsonl_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if limit and records_count >= limit:
+                        break
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    raw_payload, event_id, event_type_str = _record_to_raw_webhook(record)
 
-                if records_count % 1000 == 0:
-                    logger.info(f"Seeded {records_count} records...")
+                    try:
+                        await process_webhook_event(
+                            db=db,
+                            raw_payload=raw_payload,
+                            razorpay_event_id=event_id,
+                            event_type_str=event_type_str,
+                        )
+                        records_count += 1
+                    except Exception as err:
+                        await db.rollback()
+                        logger.warning(f"Error seeding event {event_id}: {err}")
+
+                    if records_count > 0 and records_count % 100 == 0:
+                        logger.info(f"Seeded {records_count} records...")
+    finally:
+        if old_heuristic_flag is None:
+            os.environ.pop("RECLAIM_FORCE_HEURISTIC_DIAGNOSIS", None)
+        else:
+            os.environ["RECLAIM_FORCE_HEURISTIC_DIAGNOSIS"] = old_heuristic_flag
 
     await dispose_engine()
     logger.info(f"Successfully seeded {records_count} synthetic events into database.")
@@ -135,3 +150,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

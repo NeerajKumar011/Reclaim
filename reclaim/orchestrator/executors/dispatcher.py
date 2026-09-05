@@ -6,6 +6,7 @@ Provides DB-backed live policy context gathering for real production execution.
 
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Optional, Dict, Any
 
 from sqlalchemy import select, func
@@ -21,8 +22,12 @@ from reclaim.db.models import (
     ReviewQueue,
 )
 from reclaim.diagnosis.classifier import heuristic_classify
-from reclaim.diagnosis.evaluate_model import TRAIN_JSONL_PATH
-from reclaim.diagnosis.ml_recovery_model import RecoveryMLModel, MODEL_SAVE_PATH, train_and_save_model
+from reclaim.diagnosis.ml_recovery_model import (
+    RecoveryMLModel,
+    MODEL_SAVE_PATH,
+    ENCODER_SAVE_PATH,
+    train_and_save_model,
+)
 from reclaim.diagnosis.schemas import DiagnosisOutput
 from reclaim.orchestrator.executors.razorpay_executor import RazorpayExecutor
 from reclaim.orchestrator.executors.simulated_executor import SimulatedExecutor
@@ -32,6 +37,7 @@ from reclaim.policy.verdict import PolicyDecisionEnum, PolicyVerdict
 
 logger = logging.getLogger(__name__)
 
+TRAIN_JSONL_PATH = Path(__file__).resolve().parent.parent.parent / "synthetic_data" / "output" / "train.jsonl"
 _LIVE_ML_MODEL: Optional[RecoveryMLModel] = None
 
 
@@ -40,13 +46,24 @@ def _get_live_ml_model() -> RecoveryMLModel:
     global _LIVE_ML_MODEL
     if _LIVE_ML_MODEL is None:
         model = RecoveryMLModel()
-        if not MODEL_SAVE_PATH.exists():
+        loaded = False
+        if MODEL_SAVE_PATH.exists() and ENCODER_SAVE_PATH.exists():
+            try:
+                model.load()
+                loaded = True
+            except Exception as e:
+                logger.warning(
+                    f"Could not load pre-trained ML model ({e}); retraining from train.jsonl if available."
+                )
+        if not loaded:
             if TRAIN_JSONL_PATH.exists():
-                model = train_and_save_model(TRAIN_JSONL_PATH)
+                try:
+                    model = train_and_save_model(TRAIN_JSONL_PATH)
+                except Exception as e:
+                    logger.warning(f"Could not train ML model ({e}); falling back to heuristic mode.")
+                    model.is_fitted = False
             else:
                 model.is_fitted = False
-        else:
-            model.load()
         _LIVE_ML_MODEL = model
     return _LIVE_ML_MODEL
 

@@ -10,6 +10,7 @@ Responsible for:
 """
 
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -212,31 +213,35 @@ async def _invoke_recovery_pipeline(
         diagnosed_cause = "INSUFFICIENT_FUNDS"  # safe default
 
         if normalized is not None:
-            try:
-                classifier = FailureClassifier()
-                diagnosis_output = classifier.classify(normalized)
-                diagnosed_cause = diagnosis_output.cause
-                logger.info(
-                    f"[Pipeline] event={event.razorpay_event_id} "
-                    f"diagnosed_cause={diagnosed_cause} "
-                    f"confidence={diagnosis_output.confidence:.3f}"
-                )
-            except DiagnosisValidationError as diag_err:
-                # LLM unavailable or returned bad output — use heuristic
-                logger.warning(
-                    f"[Pipeline] LLM diagnosis failed for {event.razorpay_event_id}, "
-                    f"using heuristic fallback. Reason: {diag_err}"
-                )
+            if os.environ.get("RECLAIM_FORCE_HEURISTIC_DIAGNOSIS") == "1":
                 diagnosis_output = heuristic_classify(normalized)
                 diagnosed_cause = diagnosis_output.cause
-            except Exception as diag_exc:
-                logger.error(
-                    f"[Pipeline] Unexpected error during diagnosis for "
-                    f"{event.razorpay_event_id}: {diag_exc}. Using heuristic."
-                )
-                if normalized:
+            else:
+                try:
+                    classifier = FailureClassifier()
+                    diagnosis_output = classifier.classify(normalized)
+                    diagnosed_cause = diagnosis_output.cause
+                    logger.info(
+                        f"[Pipeline] event={event.razorpay_event_id} "
+                        f"diagnosed_cause={diagnosed_cause} "
+                        f"confidence={diagnosis_output.confidence:.3f}"
+                    )
+                except DiagnosisValidationError as diag_err:
+                    # LLM unavailable or returned bad output — use heuristic
+                    logger.warning(
+                        f"[Pipeline] LLM diagnosis failed for {event.razorpay_event_id}, "
+                        f"using heuristic fallback. Reason: {diag_err}"
+                    )
                     diagnosis_output = heuristic_classify(normalized)
                     diagnosed_cause = diagnosis_output.cause
+                except Exception as diag_exc:
+                    logger.error(
+                        f"[Pipeline] Unexpected error during diagnosis for "
+                        f"{event.razorpay_event_id}: {diag_exc}. Using heuristic."
+                    )
+                    if normalized:
+                        diagnosis_output = heuristic_classify(normalized)
+                        diagnosed_cause = diagnosis_output.cause
 
         # Audit the diagnosis result
         await _audit(
