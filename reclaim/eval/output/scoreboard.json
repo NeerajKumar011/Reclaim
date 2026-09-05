@@ -1,0 +1,323 @@
+{
+  "generated_at": "2026-09-05T05:07:10.196296+00:00",
+  "eval_framework_version": "potential_outcomes_v2",
+  "outcome_model": "Potential-outcomes framework: each record receives two independent draws (would_self_resolve, uplift_realized) seeded from event_id. NO-ACTION outcome = would_self_resolve only. ALLOW/MODIFY outcome = would_self_resolve OR uplift_realized. incremental_recovered = nudge caused recovery (not self-resolution).",
+  "dataset": "test_holdout.jsonl",
+  "sample_size": 150,
+  "total_records": 150,
+  "full_dataset_size": 1500,
+  "sampling_seed": 42,
+  "llm_provider": "gemini",
+  "llm_model": "gemini-3.5-flash-lite",
+  "notes": "Live evaluation run on a reproducible random sample due to free-tier API daily limits.",
+  "policies": {
+    "NO-ACTION": {
+      "policy_name": "NO-ACTION",
+      "total_records": 150,
+      "total_at_risk_paise": 205120127,
+      "total_at_risk_rs": 2051201.27,
+      "total_recovered_paise": 16716305,
+      "total_recovered_rs": 167163.05,
+      "recovery_rate_pct": 8.15,
+      "incremental_recovery_paise": 0,
+      "incremental_recovery_rs": 0.0,
+      "would_self_resolve_count": 31,
+      "incremental_recovered_count": 0,
+      "total_intervention_cost_paise": 0,
+      "total_intervention_cost_rs": 0.0,
+      "cost_per_recovered_rupee": 0.0,
+      "contact_count": 0,
+      "revenue_recovered_per_contact_rs": 0.0,
+      "false_positive_nudge_count": 0,
+      "false_positive_rate_pct": 0.0,
+      "policy_violation_count": 0,
+      "avg_time_to_recovery_hours": 8.25,
+      "decision_distribution": {
+        "ACT": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "ALLOW decisions (dispatched to a channel)"
+        },
+        "WAIT": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "MODIFY decisions (enqueued for human review)"
+        },
+        "STOP": {
+          "count": 150,
+          "pct": 100.0,
+          "note": "BLOCK decisions (cooldown, opt-out, budget cap, ROI gate)"
+        },
+        "ESCALATE_sub": {
+          "count": 0,
+          "note": "Sub-count of ACT: ALLOW records routed via REVIEW tier. NOT additive to ACT+WAIT+STOP."
+        },
+        "_invariant": "ACT.count + WAIT.count + STOP.count == total_records"
+      }
+    },
+    "FIXED-RETRY": {
+      "policy_name": "FIXED-RETRY",
+      "total_records": 150,
+      "total_at_risk_paise": 205120127,
+      "total_at_risk_rs": 2051201.27,
+      "total_recovered_paise": 60398516,
+      "total_recovered_rs": 603985.16,
+      "recovery_rate_pct": 29.45,
+      "incremental_recovery_paise": 43682211,
+      "incremental_recovery_rs": 436822.11,
+      "would_self_resolve_count": 31,
+      "incremental_recovered_count": 30,
+      "total_intervention_cost_paise": 3750,
+      "total_intervention_cost_rs": 37.5,
+      "cost_per_recovered_rupee": 6.209e-05,
+      "contact_count": 150,
+      "revenue_recovered_per_contact_rs": 4026.57,
+      "false_positive_nudge_count": 31,
+      "false_positive_rate_pct": 20.67,
+      "policy_violation_count": 0,
+      "avg_time_to_recovery_hours": 18.17,
+      "decision_distribution": {
+        "ACT": {
+          "count": 150,
+          "pct": 100.0,
+          "note": "ALLOW decisions (dispatched to a channel)"
+        },
+        "WAIT": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "MODIFY decisions (enqueued for human review)"
+        },
+        "STOP": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "BLOCK decisions (cooldown, opt-out, budget cap, ROI gate)"
+        },
+        "ESCALATE_sub": {
+          "count": 0,
+          "note": "Sub-count of ACT: ALLOW records routed via REVIEW tier. NOT additive to ACT+WAIT+STOP."
+        },
+        "_invariant": "ACT.count + WAIT.count + STOP.count == total_records"
+      }
+    },
+    "FIXED-DUNNING": {
+      "policy_name": "FIXED-DUNNING",
+      "total_records": 150,
+      "total_at_risk_paise": 205120127,
+      "total_at_risk_rs": 2051201.27,
+      "total_recovered_paise": 70046883,
+      "total_recovered_rs": 700468.83,
+      "recovery_rate_pct": 34.15,
+      "incremental_recovery_paise": 53330578,
+      "incremental_recovery_rs": 533305.78,
+      "would_self_resolve_count": 31,
+      "incremental_recovered_count": 41,
+      "total_intervention_cost_paise": 7500,
+      "total_intervention_cost_rs": 75.0,
+      "cost_per_recovered_rupee": 0.00010707,
+      "contact_count": 150,
+      "revenue_recovered_per_contact_rs": 4669.79,
+      "false_positive_nudge_count": 31,
+      "false_positive_rate_pct": 20.67,
+      "policy_violation_count": 0,
+      "avg_time_to_recovery_hours": 16.67,
+      "decision_distribution": {
+        "ACT": {
+          "count": 150,
+          "pct": 100.0,
+          "note": "ALLOW decisions (dispatched to a channel)"
+        },
+        "WAIT": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "MODIFY decisions (enqueued for human review)"
+        },
+        "STOP": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "BLOCK decisions (cooldown, opt-out, budget cap, ROI gate)"
+        },
+        "ESCALATE_sub": {
+          "count": 0,
+          "note": "Sub-count of ACT: ALLOW records routed via REVIEW tier. NOT additive to ACT+WAIT+STOP."
+        },
+        "_invariant": "ACT.count + WAIT.count + STOP.count == total_records"
+      }
+    },
+    "RAZORPAY-SMART-RETRY": {
+      "policy_name": "RAZORPAY-SMART-RETRY",
+      "total_records": 150,
+      "total_at_risk_paise": 205120127,
+      "total_at_risk_rs": 2051201.27,
+      "total_recovered_paise": 36625508,
+      "total_recovered_rs": 366255.08,
+      "recovery_rate_pct": 17.86,
+      "incremental_recovery_paise": 19909203,
+      "incremental_recovery_rs": 199092.03,
+      "would_self_resolve_count": 31,
+      "incremental_recovered_count": 13,
+      "total_intervention_cost_paise": 0,
+      "total_intervention_cost_rs": 0.0,
+      "cost_per_recovered_rupee": 0.0,
+      "contact_count": 150,
+      "revenue_recovered_per_contact_rs": 2441.7,
+      "false_positive_nudge_count": 31,
+      "false_positive_rate_pct": 20.67,
+      "policy_violation_count": 0,
+      "avg_time_to_recovery_hours": 13.64,
+      "decision_distribution": {
+        "ACT": {
+          "count": 150,
+          "pct": 100.0,
+          "note": "ALLOW decisions (dispatched to a channel)"
+        },
+        "WAIT": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "MODIFY decisions (enqueued for human review)"
+        },
+        "STOP": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "BLOCK decisions (cooldown, opt-out, budget cap, ROI gate)"
+        },
+        "ESCALATE_sub": {
+          "count": 0,
+          "note": "Sub-count of ACT: ALLOW records routed via REVIEW tier. NOT additive to ACT+WAIT+STOP."
+        },
+        "_invariant": "ACT.count + WAIT.count + STOP.count == total_records"
+      }
+    },
+    "INDUSTRY-DUNNING-4STEP": {
+      "policy_name": "INDUSTRY-DUNNING-4STEP",
+      "total_records": 150,
+      "total_at_risk_paise": 205120127,
+      "total_at_risk_rs": 2051201.27,
+      "total_recovered_paise": 46593303,
+      "total_recovered_rs": 465933.03,
+      "recovery_rate_pct": 22.72,
+      "incremental_recovery_paise": 29876998,
+      "incremental_recovery_rs": 298769.98,
+      "would_self_resolve_count": 31,
+      "incremental_recovered_count": 20,
+      "total_intervention_cost_paise": 3750,
+      "total_intervention_cost_rs": 37.5,
+      "cost_per_recovered_rupee": 8.048e-05,
+      "contact_count": 150,
+      "revenue_recovered_per_contact_rs": 3106.22,
+      "false_positive_nudge_count": 31,
+      "false_positive_rate_pct": 20.67,
+      "policy_violation_count": 0,
+      "avg_time_to_recovery_hours": 17.49,
+      "decision_distribution": {
+        "ACT": {
+          "count": 150,
+          "pct": 100.0,
+          "note": "ALLOW decisions (dispatched to a channel)"
+        },
+        "WAIT": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "MODIFY decisions (enqueued for human review)"
+        },
+        "STOP": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "BLOCK decisions (cooldown, opt-out, budget cap, ROI gate)"
+        },
+        "ESCALATE_sub": {
+          "count": 0,
+          "note": "Sub-count of ACT: ALLOW records routed via REVIEW tier. NOT additive to ACT+WAIT+STOP."
+        },
+        "_invariant": "ACT.count + WAIT.count + STOP.count == total_records"
+      }
+    },
+    "ML-SCORE-ONLY": {
+      "policy_name": "ML-SCORE-ONLY",
+      "total_records": 150,
+      "total_at_risk_paise": 205120127,
+      "total_at_risk_rs": 2051201.27,
+      "total_recovered_paise": 22800212,
+      "total_recovered_rs": 228002.12,
+      "recovery_rate_pct": 11.12,
+      "incremental_recovery_paise": 6083907,
+      "incremental_recovery_rs": 60839.07,
+      "would_self_resolve_count": 31,
+      "incremental_recovered_count": 4,
+      "total_intervention_cost_paise": 1700,
+      "total_intervention_cost_rs": 17.0,
+      "cost_per_recovered_rupee": 7.456e-05,
+      "contact_count": 45,
+      "revenue_recovered_per_contact_rs": 5066.71,
+      "false_positive_nudge_count": 15,
+      "false_positive_rate_pct": 33.33,
+      "policy_violation_count": 0,
+      "avg_time_to_recovery_hours": 10.74,
+      "decision_distribution": {
+        "ACT": {
+          "count": 45,
+          "pct": 30.0,
+          "note": "ALLOW decisions (dispatched to a channel)"
+        },
+        "WAIT": {
+          "count": 0,
+          "pct": 0.0,
+          "note": "MODIFY decisions (enqueued for human review)"
+        },
+        "STOP": {
+          "count": 105,
+          "pct": 70.0,
+          "note": "BLOCK decisions (cooldown, opt-out, budget cap, ROI gate)"
+        },
+        "ESCALATE_sub": {
+          "count": 0,
+          "note": "Sub-count of ACT: ALLOW records routed via REVIEW tier. NOT additive to ACT+WAIT+STOP."
+        },
+        "_invariant": "ACT.count + WAIT.count + STOP.count == total_records"
+      }
+    },
+    "RECLAIM": {
+      "policy_name": "RECLAIM",
+      "total_records": 150,
+      "total_at_risk_paise": 205120127,
+      "total_at_risk_rs": 2051201.27,
+      "total_recovered_paise": 68077907,
+      "total_recovered_rs": 680779.07,
+      "recovery_rate_pct": 33.19,
+      "incremental_recovery_paise": 51361602,
+      "incremental_recovery_rs": 513616.02,
+      "would_self_resolve_count": 31,
+      "incremental_recovered_count": 34,
+      "total_intervention_cost_paise": 3225,
+      "total_intervention_cost_rs": 32.25,
+      "cost_per_recovered_rupee": 4.737e-05,
+      "contact_count": 106,
+      "revenue_recovered_per_contact_rs": 6422.44,
+      "false_positive_nudge_count": 19,
+      "false_positive_rate_pct": 17.92,
+      "policy_violation_count": 0,
+      "avg_time_to_recovery_hours": 17.45,
+      "decision_distribution": {
+        "ACT": {
+          "count": 106,
+          "pct": 70.67,
+          "note": "ALLOW decisions (dispatched to a channel)"
+        },
+        "WAIT": {
+          "count": 29,
+          "pct": 19.33,
+          "note": "MODIFY decisions (enqueued for human review)"
+        },
+        "STOP": {
+          "count": 15,
+          "pct": 10.0,
+          "note": "BLOCK decisions (cooldown, opt-out, budget cap, ROI gate)"
+        },
+        "ESCALATE_sub": {
+          "count": 15,
+          "note": "Sub-count of ACT: ALLOW records routed via REVIEW tier. NOT additive to ACT+WAIT+STOP."
+        },
+        "_invariant": "ACT.count + WAIT.count + STOP.count == total_records"
+      }
+    }
+  }
+}
