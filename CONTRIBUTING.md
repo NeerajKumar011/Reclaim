@@ -6,30 +6,40 @@ Thank you for your interest in contributing to RECLAIM! We welcome contributions
 
 ## Development Setup
 
-1. **Clone the repository and set up a virtual environment**:
+1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-org/Reclaim.git
+   git clone https://github.com/NeerajKumar011/Reclaim.git
    cd Reclaim
-   python -m venv .venv
-   # Windows:
-   .venv\Scripts\activate
-   # Linux/macOS:
-   source .venv/bin/activate
    ```
 
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   pip install matplotlib pytest httpx
-   ```
+2. **Set up virtual environment & install dependencies**:
+   - **🪟 Windows**:
+     ```powershell
+     python -m venv .venv
+     .venv\Scripts\activate
+     pip install -r requirements.txt
+     copy .env.example .env
+     ```
+   - **🐧 Linux (Kali Linux / Ubuntu)**:
+     ```bash
+     sudo apt update && sudo apt install -y python3-venv python3-pip
+     python3 -m venv .venv
+     source .venv/bin/activate
+     pip install -r requirements.txt
+     cp .env.example .env
+     ```
+   - **🍎 macOS**:
+     ```bash
+     python3 -m venv .venv
+     source .venv/bin/activate
+     pip install -r requirements.txt
+     cp .env.example .env
+     ```
 
 3. **Configure Environment Variables**:
-   ```bash
-   cp .env.example .env
-   # Set your GEMINI_API_KEY or GROQ_API_KEY in .env
-   ```
+   Edit `.env` and set `GEMINI_API_KEY` or `GROQ_API_KEY`.
 
-4. **Initialize Database**:
+4. **Initialize Database & Models**:
    ```bash
    python -m alembic upgrade head
    python -m reclaim.synthetic_data.seed_db
@@ -52,7 +62,7 @@ Thank you for your interest in contributing to RECLAIM! We welcome contributions
      ```bash
      pytest -v
      ```
-   - Decision distribution invariant must hold: $\text{ACT} + \text{WAIT} + \text{STOP} = \text{total\_records}$.
+   - Decision distribution invariant must hold: **ACT + WAIT + STOP = Total Records**.
 
 ---
 
